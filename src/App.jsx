@@ -296,6 +296,27 @@ export default function App() {
     setRoster((prev) => prev.map((p) => ({ ...p, offense: 'Steady', defense: 'Steady' })));
   }, [setRoster]);
 
+  /**
+   * Drag-to-swap on the Live tab, applied to the shift that is out there right
+   * now. Confirmed by name, because a swap made by dragging is easy to make by
+   * accident and the pitch alone does not say what just moved.
+   */
+  const handleSwapCurrentShift = useCallback(
+    (positionId, playerId) => {
+      const displaced = lineup?.[globalShift]?.[positionId];
+      const nameOf = Object.fromEntries(roster.map((p) => [p.id, p.name]));
+      setLineup((prev) => applySwap(prev, globalShift, positionId, playerId));
+      setToast({
+        id: Date.now(),
+        title: 'Swapped',
+        detail: displaced
+          ? `${nameOf[playerId]} ⇄ ${nameOf[displaced]} · shift ${globalShift + 1}`
+          : `${nameOf[playerId]} on at ${positionId} · shift ${globalShift + 1}`,
+      });
+    },
+    [lineup, globalShift, roster, setLineup]
+  );
+
   const handleLineupChange = useCallback(
     (shiftIndex, positionId, playerId) =>
       setLineup((prev) => applySwap(prev, shiftIndex, positionId, playerId)),
@@ -502,6 +523,7 @@ export default function App() {
               wakeLock={wakeLock}
               canUndoShiftChange={!!undoPoint}
               onUndoShiftChange={handleUndoShiftChange}
+              onSwapCurrentShift={handleSwapCurrentShift}
             />
           ) : (
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-8 text-center">

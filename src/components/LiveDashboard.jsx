@@ -8,7 +8,8 @@ import {
 } from '../lib/constants.js';
 import { benchForShift, diffShifts } from '../lib/lineup.js';
 import { formatClock, formatCountdown } from '../lib/format.js';
-import { Banner, Button, Card, SectionLabel, Tag } from './ui.jsx';
+import { Banner, Button, Card, SectionLabel } from './ui.jsx';
+import PitchBoard from './PitchBoard.jsx';
 
 /** The pitch is drawn top-down: forwards at the top, keeper at the bottom. */
 const LINES = [
@@ -64,6 +65,7 @@ export default function LiveDashboard({
   wakeLock = 'unsupported',
   canUndoShiftChange = false,
   onUndoShiftChange,
+  onSwapCurrentShift,
 }) {
   const present = useMemo(() => roster.filter((p) => p.isPresent), [roster]);
   const nameOf = useMemo(
@@ -355,61 +357,15 @@ export default function LiveDashboard({
         )}
       </div>
 
-      {/* ================= ON THE FIELD ================= */}
-      <div>
-        <SectionLabel right={`${Object.values(currentShift).filter(Boolean).length} on`}>
-          On The Field Now
-        </SectionLabel>
-        <Card className="space-y-2 border-lime-900/40 bg-gradient-to-b from-lime-950/30 to-slate-900/70 p-3">
-          {LINES.map((line) => (
-            <div key={line.key} className="flex gap-2">
-              {line.ids.map((posId) => (
-                <PositionChip
-                  key={posId}
-                  posId={posId}
-                  name={nameOf[currentShift[posId]]}
-                  tone={posId === 'GK' ? 'keeper' : 'normal'}
-                />
-              ))}
-            </div>
-          ))}
-        </Card>
-      </div>
-
-      {/* ================= BENCH ================= */}
-      <div>
-        <SectionLabel right={`${bench.length} resting`}>Bench</SectionLabel>
-        <Card className="p-3">
-          {bench.length === 0 ? (
-            <p className="py-2 text-center text-sm font-semibold text-slate-500">
-              Everybody is on the field.
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {bench.map((p) => {
-                const comingIn = diff?.comingIn.find((c) => c.pid === p.id);
-                return (
-                  <span
-                    key={p.id}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-black uppercase tracking-tight ${
-                      comingIn
-                        ? 'border-lime-500/50 bg-lime-500/10 text-lime-300'
-                        : 'border-slate-700 bg-slate-800 text-slate-300'
-                    }`}
-                  >
-                    {p.name}
-                    {comingIn && (
-                      <Tag group={POSITION_BY_ID[comingIn.to].group}>
-                        {comingIn.to}
-                      </Tag>
-                    )}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-      </div>
+      {/* ============ ON THE FIELD + BENCH (drag to swap) ============ */}
+      <PitchBoard
+        shift={currentShift}
+        bench={bench}
+        nameOf={nameOf}
+        comingIn={diff?.comingIn}
+        onCount={Object.values(currentShift).filter(Boolean).length}
+        onSwap={onSwapCurrentShift}
+      />
 
       {/* ================= NEXT SHIFT PREVIEW ================= */}
       <div>

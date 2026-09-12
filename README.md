@@ -25,7 +25,7 @@ browser's localStorage — there is no backend and nothing leaves the device.
 ## The four views
 
 - **Setup** — attendance, position preferences (season-long), "Wants Goalie Today?" (per game), build lineup, and **Line Balance**.
-- **Live** — half clock counting up to 30:00, derived shift countdown, substitution alert, who's on / who's benched, and a next-shift preview split into three shoutable lists: **Going On** (from the bench), **Staying On** (everyone already out there, with position switchers flagged amber), and **Coming Off**. Positions are spelled out — "Center Mid", not "CM" — because the list is read aloud across a pitch.
+- **Live** — half clock counting up to 30:00, derived shift countdown, substitution alert, **drag-to-swap** on the pitch and bench, who's on / who's benched, and a next-shift preview split into three shoutable lists: **Going On** (from the bench), **Staying On** (everyone already out there, with position switchers flagged amber), and **Coming Off**. Positions are spelled out — "Center Mid", not "CM" — because the list is read aloud across a pitch.
 - **Matrix** — the full 8 × 9 grid, split into 1st/2nd half so it fits a phone. Tap any cell to swap.
 - **Season** — cumulative shifts per player, broken out by GK / D / M / F.
 
@@ -235,6 +235,32 @@ Everyone starts Steady, so the feature is inert until a coach deliberately marks
 someone. It is season-long and lives behind its own button rather than on the
 roster list, and nothing from this screen is ever rendered on the Live, Matrix
 or Season views.
+
+## Drag to swap
+
+The pitch and bench on the Live tab are draggable (`@dnd-kit/core`). Press and
+hold a player, drag them onto another, let go — the two change places in the
+shift that is on the pitch right now. Three gestures, one rule:
+
+| Drag | Drop on | Result |
+|---|---|---|
+| bench player | a position | they come on, the other goes off |
+| a position | another position | the two swap positions |
+| a position | bench player | the bench player comes on, the dragged one sits |
+
+All three normalise to the same `applySwap`, which already guaranteed no player
+can occupy two positions in one shift.
+
+**The press-and-hold delay is the whole trick.** Live is a long scrolling page,
+and a drag that began on contact would mean every attempt to scroll past the
+pitch snatched up a player instead. The `TouchSensor` waits 220ms and tolerates
+8px, so a flick scrolls and a deliberate hold picks up; `MouseSensor` is
+separate and activates on 8px of movement, because a mouse should not have to
+wait. Verified both: a 60ms flick starts no drag, a 320ms hold does.
+
+The drag overlay is portal-rendered and floats above the page, so picking a
+player up never reflows the roster beneath — the same rule that governs the
+toast and the Setup list.
 
 ## Keeping the plan in sync with Setup
 
