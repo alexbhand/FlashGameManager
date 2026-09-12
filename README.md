@@ -103,9 +103,14 @@ priorities in a strict order: **equity > continuity > preference**.
    - *No back-to-back sits* pushes on the player who sat the **last** shift,
      sized to beat continuity and break ties but to lose to a genuine one-shift
      equity gap.
-   - *Continuity* keeps a player in the exact same position for up to 2
-     straight shifts, then rotates them.
-   - *Preference* places players in their chosen line, with a mild variety term.
+   - *Rotation* moves players around the pitch. A player is penalised for
+     returning to the line they just left, and penalised harder for the exact
+     same slot, so nobody spends the afternoon at Left D. This deliberately
+     outranks preference: a defender who has just played defence gets moved
+     rather than parked. Penalties rather than bans, so when the only open slot
+     is on the line they just left, they take it instead of leaving a hole.
+   - *Preference* biases which line a player sees most, and a cumulative term
+     spreads each player across all three over the game.
 
 Measured across every roster size from 9 to 16 and 1–4 goalie volunteers, 60–80
 seeds each:
@@ -120,9 +125,15 @@ seeds each:
 - **No duplicate players** within a shift across all 1,680 generated games.
 - Keepers average ~6.1 total shifts vs ~5.4 for everyone else — the intended
   trade-off, visible in the Season table's GK column.
-- Position continuity 79–100%, preference match ~78%, and over 200 games every
-  back-to-back bench sit belongs to a player already ahead on projected load,
-  i.e. **none are avoidable**.
+- **Rotation**: across 22,575 back-to-back field transitions, a player returns
+  to the same line 7.5% of the time and the same exact slot 2.2%. Players with
+  three or more field shifts now typically see 4–5 different positions; the
+  old continuity rule left 79 of them in a single position all game.
+- Preference still biases strongly without owning a player: someone who prefers
+  defence takes 58% of their shifts there against 37.5% if positions were
+  random, and a player with no preference lands exactly on the neutral split.
+- Over 200 games every back-to-back bench sit belongs to a player already ahead
+  on projected load, i.e. **none are avoidable**.
 
 ## Late arrivals and early exits
 

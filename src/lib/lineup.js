@@ -76,17 +76,33 @@ const W = {
    *  kid who is merely one shift light. Falls to zero the moment the floor is
    *  met, so it never runs away with the lineup. */
   KEEPER_FLOOR: 2500,
-  /** Continuity: a player who just came on is nudged to stay for shift #2. */
+  /** Continuity of SELECTION, not position: a player who just came on is
+   *  nudged to stay on the pitch for a second shift, then rotated off. This is
+   *  about who plays, and is unrelated to where they stand. */
   ON_FIELD_ONE: 40,
-  /** ...but after 2 straight they get rotated off, unless equity says stay. */
   ON_FIELD_TWO_PLUS: -120,
 
   // --- position-level weights (stage 2b) ---
   PREFERRED_GROUP: 120,   // position family is on the player's preference list
   NO_PREFERENCE: 45,      // player listed nothing = happy anywhere
-  SAME_POSITION: 90,      // exact same slot as last shift (the continuity rule)
-  SAME_LINE: 18,          // at least the same line (D / Mid / Fwd)
-  GROUP_REPEAT: -12,      // mild variety: stop stacking one kid at Center D
+  /**
+   * ROTATION. These used to be bonuses for staying put — the original brief
+   * asked for a player to hold the same position for up to two shifts to keep
+   * substitutions calm. In practice it produced kids who spent the whole game
+   * in one spot, so they are now penalties and the ordering matters:
+   *
+   *   LINE_REPEAT outweighs PREFERRED_GROUP, so a player who prefers defence
+   *   and has just played defence is moved elsewhere rather than parked there.
+   *   Preference becomes a bias toward the line they like, not a home they
+   *   never leave.
+   *
+   * They are penalties rather than hard bans on purpose: when the only open
+   * slot is on the line they just left, they take it instead of a position
+   * being left empty.
+   */
+  LINE_REPEAT: -200,      // same line (D / Mid / Fwd) as their last shift
+  EXACT_REPEAT: -140,     // ...and the very same slot, on top of that
+  GROUP_REPEAT: -35,      // cumulative: spread each player across all three lines
 };
 
 /** Deterministic PRNG (mulberry32) so a given seed always yields the same
@@ -502,8 +518,7 @@ export function generateLineup(players, opts = {}) {
       fieldShifts: 0,
       benchStreak: 0,
       fieldStreak: 0,
-      lastPos: null,
-      samePosStreak: 0,
+      lastPos: null, // most recent appearance, NOT cleared by a bench shift
       groupCount: { Defense: 0, Midfield: 0, Forward: 0, Goalie: 0 },
     };
   });
@@ -522,20 +537,18 @@ export function generateLineup(players, opts = {}) {
         if (posId !== 'GK') s0.fieldShifts += 1;
         s0.fieldStreak += 1;
         s0.benchStreak = 0;
-        s0.samePosStreak = s0.lastPos === posId ? s0.samePosStreak + 1 : 1;
         s0.lastPos = posId;
         s0.groupCount[POSITION_BY_ID[posId].group] += 1;
       } else if (isAvailableAt(p, s)) {
         s0.benchStreak += 1;
         s0.fieldStreak = 0;
-        s0.samePosStreak = 0;
-        s0.lastPos = null;
+        // lastPos deliberately survives a rest — coming back on after one shift
+        // off is not a reason to put someone straight back where they were.
       } else {
         // Not here — sitting in a car park is not "benched", so no streak.
         s0.benchStreak = 0;
         s0.fieldStreak = 0;
-        s0.samePosStreak = 0;
-        s0.lastPos = null;
+        s0.lastPos = null; // went home; nothing to rotate away from
       }
     });
   };
@@ -695,20 +708,11 @@ export function generateLineup(players, opts = {}) {
 
     // --- 2b. WHERE they play -------------------------------------------------
     const open = new Set(FIELD_POSITIONS.map((p) => p.id));
-    const unplaced = [];
-
-    // Continuity pass: anyone staying on keeps their exact position, for up to
-    // 2 consecutive shifts. This is what stops the "everybody rotate" chaos.
-    onField.forEach((p) => {
-      const s0 = st[p.id];
-      const lp = s0.lastPos;
-      if (lp && lp !== 'GK' && open.has(lp) && s0.samePosStreak < 2) {
-        shift[lp] = p.id;
-        open.delete(lp);
-      } else {
-        unplaced.push(p);
-      }
-    });
+    // Everyone is placed by score. There is no longer a pass that pins players
+    // to the spot they held last shift: that pass, combined with the old
+    // SAME_POSITION bonus below it, is what produced kids standing at Left D
+    // for seven shifts running.
+    const unplaced = [...onField];
 
     // Preference pass: score every remaining (player, position) pair and take
     // the best ones greedily. 8x8 at most, so the cost is irrelevant and the
@@ -724,8 +728,10 @@ export function generateLineup(players, opts = {}) {
         } else if (p.preferredPositions.includes(pos.group)) {
           score += W.PREFERRED_GROUP;
         }
-        if (s0.lastPos === posId) score += W.SAME_POSITION;
-        else if (s0.lastPos && POSITION_BY_ID[s0.lastPos].group === pos.group) score += W.SAME_LINE;
+        if (s0.lastPos && s0.lastPos !== 'GK') {
+          if (POSITION_BY_ID[s0.lastPos].group === pos.group) score += W.LINE_REPEAT;
+          if (s0.lastPos === posId) score += W.EXACT_REPEAT;
+        }
         score += W.GROUP_REPEAT * s0.groupCount[pos.group];
         score += rng() * 10;
         pairs.push({ pid: p.id, posId, score });
