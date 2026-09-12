@@ -5,9 +5,6 @@ import {
   STORAGE_KEYS,
   TOTAL_SHIFTS,
   createRoster,
-  createPlayer,
-  ROSTER_NAMES,
-  slugify,
 } from './lib/constants.js';
 import {
   computeGameStats,
@@ -19,6 +16,15 @@ import {
 } from './lib/lineup.js';
 import { todayISO } from './lib/format.js';
 import { useLocalStorage } from './lib/useLocalStorage.js';
+import { useWakeLock } from './lib/useWakeLock.js';
+import {
+  validateClock,
+  validateGames,
+  validateLineup,
+  validateMeta,
+  validateRoster,
+  validateSettings,
+} from './lib/persistence.js';
 import PreGameSetup from './components/PreGameSetup.jsx';
 import LiveDashboard from './components/LiveDashboard.jsx';
 import MatrixView from './components/MatrixView.jsx';
@@ -67,47 +73,31 @@ export const shiftDueAt = (shiftInHalf) => (shiftInHalf + 1) * SHIFT_MS;
 
 const INITIAL_SETTINGS = { singleKeeperBothHalves: false, seed: 1, opponent: '' };
 
-/** Heal rosters saved by an older build (or hand-edited localStorage). */
-function migrateRoster(saved) {
-  if (!Array.isArray(saved) || saved.length === 0) return createRoster();
-  const byId = new Map(
-    saved
-      .filter((p) => p && typeof p.name === 'string')
-      .map((p) => [
-        p.id || slugify(p.name),
-        {
-          id: p.id || slugify(p.name),
-          name: p.name,
-          isPresent: p.isPresent !== false,
-          preferredPositions: Array.isArray(p.preferredPositions) ? p.preferredPositions : [],
-          wantsGoalieToday: p.wantsGoalieToday === true,
-          arriveShift: Number.isInteger(p.arriveShift) ? p.arriveShift : 0,
-          departShift: Number.isInteger(p.departShift) ? p.departShift : null,
-        },
-      ])
-  );
-  // Make sure every name from the canonical roster exists exactly once.
-  ROSTER_NAMES.forEach((name) => {
-    const id = slugify(name);
-    if (!byId.has(id)) byId.set(id, createPlayer(name));
-  });
-  return [...byId.values()];
-}
-
 export default function App() {
   // --- Persisted state ------------------------------------------------------
-  const [roster, setRoster] = useLocalStorage(STORAGE_KEYS.roster, createRoster, migrateRoster);
-  const [lineup, setLineup] = useLocalStorage(STORAGE_KEYS.lineup, emptyLineup);
+  // Every one of these is validated on the way in. Parsing successfully is not
+  // the same as being usable, and a bad shape used to crash the render.
+  const [roster, setRoster] = useLocalStorage(STORAGE_KEYS.roster, createRoster, validateRoster);
+  const [lineup, setLineup] = useLocalStorage(STORAGE_KEYS.lineup, emptyLineup, validateLineup);
   // What the saved lineup was actually built from — see planSignature().
-  const [lineupMeta, setLineupMeta] = useLocalStorage(STORAGE_KEYS.lineupMeta, null);
-  const [games, setGames] = useLocalStorage(STORAGE_KEYS.completedGames, []);
-  const [settings, setSettings] = useLocalStorage(STORAGE_KEYS.settings, INITIAL_SETTINGS);
-  const [clock, setClock] = useLocalStorage(STORAGE_KEYS.gameState, INITIAL_CLOCK);
+  const [lineupMeta, setLineupMeta] = useLocalStorage(STORAGE_KEYS.lineupMeta, null, validateMeta);
+  const [games, setGames] = useLocalStorage(STORAGE_KEYS.completedGames, [], validateGames);
+  const [settings, setSettings] = useLocalStorage(STORAGE_KEYS.settings, INITIAL_SETTINGS, (v) =>
+    validateSettings(v, INITIAL_SETTINGS)
+  );
+  const [clock, setClock] = useLocalStorage(STORAGE_KEYS.gameState, INITIAL_CLOCK, (v) =>
+    validateClock(v, INITIAL_CLOCK)
+  );
 
   // --- Ephemeral state ------------------------------------------------------
   const [tab, setTab] = useState('setup');
   const [warnings, setWarnings] = useState([]);
   const [rosterSheetOpen, setRosterSheetOpen] = useState(false);
+  // One tap of undo after a shift change, for the accidental press.
+  const [undoPoint, setUndoPoint] = useState(null);
+
+  // Stop the phone dimming and locking itself while a half is running.
+  const wakeLock = useWakeLock(clock.running);
   const [now, setNow] = useState(() => Date.now());
 
   // Re-render 4x/second only while the clock is actually running.
@@ -323,12 +313,30 @@ export default function App() {
    * overrun, so the next sub is still due when the plan says it is.
    */
   const handleCompleteShiftChange = useCallback(() => {
-    setClock((c) =>
-      c.shiftInHalf + 1 >= SHIFTS_PER_HALF ? c : { ...c, shiftInHalf: c.shiftInHalf + 1 }
-    );
+    setClock((c) => {
+      if (c.shiftInHalf + 1 >= SHIFTS_PER_HALF) return c;
+      // Snapshot first: this button sits under a thumb next to a pause
+      // control, and a mis-tap used to be unrecoverable.
+      setUndoPoint({ clock: c, at: Date.now() });
+      return { ...c, shiftInHalf: c.shiftInHalf + 1 };
+    });
   }, [setClock]);
 
+  const handleUndoShiftChange = useCallback(() => {
+    if (!undoPoint) return;
+    setClock(undoPoint.clock);
+    setUndoPoint(null);
+  }, [undoPoint, setClock]);
+
+  // The undo offer lapses so it can never be confused with the next shift.
+  useEffect(() => {
+    if (!undoPoint) return undefined;
+    const id = setTimeout(() => setUndoPoint(null), 25_000);
+    return () => clearTimeout(id);
+  }, [undoPoint]);
+
   const handleEndHalf = useCallback(() => {
+    setUndoPoint(null);
     setClock((c) =>
       c.half === 1
         ? { ...INITIAL_CLOCK, half: 2, status: 'pregame' } // fresh 30:00 for the 2nd half
@@ -344,6 +352,7 @@ export default function App() {
       )
     )
       return;
+    setUndoPoint(null);
     setClock(INITIAL_CLOCK);
     buildLineup(0); // re-plan, so newly ticked goalies actually take effect
   }, [setClock, buildLineup]);
@@ -457,6 +466,9 @@ export default function App() {
               onOpenMatrix={() => setTab('matrix')}
               onOpenRosterChange={() => setRosterSheetOpen(true)}
               warnings={warnings}
+              wakeLock={wakeLock}
+              canUndoShiftChange={!!undoPoint}
+              onUndoShiftChange={handleUndoShiftChange}
             />
           ) : (
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-8 text-center">

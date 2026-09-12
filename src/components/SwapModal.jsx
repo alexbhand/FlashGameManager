@@ -70,7 +70,7 @@ export default function SwapModal({ open, shiftIndex, positionId, lineup, roster
                   : <span className="text-slate-600">Open Slot</span>}
               </p>
             </div>
-            <Button variant="outline" className="min-h-[44px] px-4 text-xs" onClick={onClose}>
+            <Button variant="outline" className="min-h-[48px] px-4 text-xs" onClick={onClose}>
               Close
             </Button>
           </div>

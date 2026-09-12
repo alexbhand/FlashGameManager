@@ -182,7 +182,7 @@ export default function PreGameSetup({
                       <button
                         key={group}
                         onClick={() => togglePreference(player, group)}
-                        className={`min-h-[44px] flex-1 rounded-lg border text-xs font-black uppercase tracking-wide transition-colors ${
+                        className={`min-h-[48px] flex-1 rounded-lg border text-xs font-black uppercase tracking-wide transition-colors ${
                           on
                             ? 'border-lime-400/60 bg-lime-400/20 text-lime-300'
                             : 'border-slate-700 bg-slate-800/60 text-slate-500'

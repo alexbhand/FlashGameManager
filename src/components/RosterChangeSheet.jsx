@@ -41,7 +41,7 @@ export default function RosterChangeSheet({
       </div>
       <Button
         variant={tone}
-        className="min-h-[44px] shrink-0 px-3 text-[11px]"
+        className="min-h-[48px] shrink-0 px-3 text-[11px]"
         onClick={() => action(player.id)}
       >
         {actionLabel}
@@ -67,7 +67,7 @@ export default function RosterChangeSheet({
                 Re-plans from shift {Math.min(fromShift + 1, TOTAL_SHIFTS)} onward
               </p>
             </div>
-            <Button variant="outline" className="min-h-[44px] shrink-0 px-4 text-xs" onClick={onClose}>
+            <Button variant="outline" className="min-h-[48px] shrink-0 px-4 text-xs" onClick={onClose}>
               Done
             </Button>
           </div>
@@ -125,7 +125,7 @@ export default function RosterChangeSheet({
                     </span>
                     <Button
                       variant="outline"
-                      className="min-h-[40px] px-3 text-[10px]"
+                      className="min-h-[48px] px-3 text-[10px]"
                       onClick={() => onUndo(p.id)}
                     >
                       Undo

@@ -155,7 +155,7 @@ export default function SeasonHistory({ games, roster, onDeleteGame, onClearSeas
                 </div>
                 <Button
                   variant="dangerQuiet"
-                  className="min-h-[44px] shrink-0 px-3 text-xs"
+                  className="min-h-[48px] shrink-0 px-3 text-xs"
                   onClick={() => onDeleteGame(game.id)}
                 >
                   Delete

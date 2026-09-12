@@ -201,6 +201,27 @@ late simply makes that one shift 44s short, and the next one is still due at
 15:00, where the plan says it is. Some shifts therefore run a little long or
 short, which evens out across a season and keeps every boundary predictable.
 
+## Surviving the touchline
+
+Things that matter when the only device is a phone in someone's hand during a
+live match:
+
+- **Nothing white-screens.** Every persisted key is validated on read
+  (`src/lib/persistence.js`) — parsing successfully is not the same as being
+  usable, and a bad shape used to throw mid-render. An `ErrorBoundary` catches
+  anything that still gets through and offers *Reload & keep my data* or
+  *Start fresh*, because a blank screen is unrecoverable for a coach with 16
+  kids and no console.
+- **The screen stays awake** while the clock runs, via the Screen Wake Lock
+  API (`src/lib/useWakeLock.js`). The lock is re-requested on
+  `visibilitychange`, since the browser drops it whenever the page is hidden.
+  A ☀ appears next to "Running" when it is held.
+- **Ending a half is always reachable.** Once the clock passes 30:00 the End
+  Half button appears whatever shift you are on — being behind on subs used to
+  leave no way out.
+- **One tap of undo** after a shift change, for 25 seconds.
+- **Every tappable control is at least 48×48px.**
+
 ## localStorage
 
 `src/lib/useLocalStorage.js` — a `useState` drop-in that mirrors to

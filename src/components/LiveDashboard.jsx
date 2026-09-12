@@ -61,6 +61,9 @@ export default function LiveDashboard({
   onOpenMatrix,
   onOpenRosterChange,
   warnings = [],
+  wakeLock = 'unsupported',
+  canUndoShiftChange = false,
+  onUndoShiftChange,
 }) {
   const present = useMemo(() => roster.filter((p) => p.isPresent), [roster]);
   const nameOf = useMemo(
@@ -89,6 +92,10 @@ export default function LiveDashboard({
   const subDue = countdown <= 0;
   const halfOver = elapsed >= HALF_MS;
   const isLastShiftOfHalf = clock.shiftInHalf >= SHIFTS_PER_HALF - 1;
+  // A coach who is behind on subs still has to be able to end the half. Gating
+  // "End Half" on being on the last shift meant that at 31:00 on shift 2 the
+  // only button on screen was "Shift Change Complete" — no way out.
+  const canEndHalf = isLastShiftOfHalf || halfOver;
   const halfPct = Math.min(100, (elapsed / HALF_MS) * 100);
   const shiftPct = Math.max(
     0,
@@ -163,6 +170,11 @@ export default function LiveDashboard({
               }`}
             />
             {clock.running ? 'Running' : clock.status === 'pregame' ? 'Ready' : 'Paused'}
+            {clock.running && wakeLock === 'active' && (
+              <span className="ml-1 text-slate-500" title="Screen kept awake">
+                ☀
+              </span>
+            )}
           </span>
         </div>
 
@@ -257,10 +269,10 @@ export default function LiveDashboard({
         >
           {/* Only the heading pulses — the names below must stay readable. */}
           <p className="animate-pulse text-center text-lg font-black uppercase tracking-[0.15em] text-white">
-            {halfOver && isLastShiftOfHalf ? '\u23f9 Half Complete' : '\u26a0 Substitution Alert'}
+            {halfOver ? '\u23f9 Half Complete' : '\u26a0 Substitution Alert'}
           </p>
           <p className="mt-1 text-center text-xs font-semibold text-slate-200">
-            {halfOver && isLastShiftOfHalf
+            {halfOver
               ? 'Clock has passed 30:00 — end the half at the whistle.'
               : 'Sub at the next stoppage. Clock keeps running.'}
           </p>
@@ -314,23 +326,34 @@ export default function LiveDashboard({
       )}
 
       {/* The confirm button lives outside the alert so it is always reachable. */}
-      {isLastShiftOfHalf ? (
-        <Button
-          variant={halfOver ? 'danger' : 'outline'}
-          className="w-full text-lg"
-          onClick={onEndHalf}
-        >
-          {clock.half === 1 ? 'End 1st Half' : 'End Game'}
-        </Button>
-      ) : (
-        <Button
-          variant={subDue ? 'warn' : 'ghost'}
-          className="w-full text-lg"
-          onClick={onCompleteShiftChange}
-        >
-          Shift Change Complete →
-        </Button>
-      )}
+      <div className="space-y-2">
+        {canEndHalf && (
+          <Button
+            variant={halfOver ? 'danger' : 'outline'}
+            className="w-full text-lg"
+            onClick={onEndHalf}
+          >
+            {clock.half === 1 ? 'End 1st Half' : 'End Game'}
+          </Button>
+        )}
+
+        {!isLastShiftOfHalf && (
+          <Button
+            variant={subDue && !halfOver ? 'warn' : 'ghost'}
+            className="w-full text-lg"
+            onClick={onCompleteShiftChange}
+          >
+            Shift Change Complete →
+          </Button>
+        )}
+
+        {/* One tap back, for the thumb that hit the wrong button. */}
+        {canUndoShiftChange && (
+          <Button variant="outline" className="w-full text-sm" onClick={onUndoShiftChange}>
+            ↩ Undo last shift change
+          </Button>
+        )}
+      </div>
 
       {/* ================= ON THE FIELD ================= */}
       <div>
