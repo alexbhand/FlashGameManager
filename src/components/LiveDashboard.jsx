@@ -6,7 +6,7 @@ import {
   SHIFT_MS,
   TOTAL_SHIFTS,
 } from '../lib/constants.js';
-import { benchForShift, diffShifts, positionChanges } from '../lib/lineup.js';
+import { benchForShift, diffShifts } from '../lib/lineup.js';
 import { formatClock, formatCountdown } from '../lib/format.js';
 import { Banner, Button, Card, SectionLabel, Tag } from './ui.jsx';
 
@@ -76,11 +76,6 @@ export default function LiveDashboard({
   const bench = benchForShift(lineup, present, globalShift);
   const diff = useMemo(
     () => (nextShift ? diffShifts(currentShift, nextShift) : null),
-    [currentShift, nextShift]
-  );
-  // What the coach actually calls out: position by position, who for whom.
-  const changes = useMemo(
-    () => (nextShift ? positionChanges(currentShift, nextShift) : []),
     [currentShift, nextShift]
   );
 
@@ -269,11 +264,14 @@ export default function LiveDashboard({
               : 'Sub at the next stoppage. Clock keeps running.'}
           </p>
 
-          {/* The one thing the coach needs at the whistle: who goes on. */}
-          {!(halfOver && isLastShiftOfHalf) && diff?.comingIn.length > 0 && (
+          {/* What the coach needs at the whistle: who goes on, AND who is
+              already out there but has to move. The second list is the one
+              that gets forgotten — those players hear nothing unless you
+              shout their new spot at them. */}
+          {diff?.comingIn.length > 0 && (
             <div className="mt-3 border-t border-white/20 pt-3">
               <p className="mb-2 text-center text-[10px] font-black uppercase tracking-[0.2em] text-amber-100">
-                Send on now
+                {isLastShiftOfHalf ? 'Starting next half' : 'Send on now'}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
                 {diff.comingIn.map(({ pid, to }) => (
@@ -283,7 +281,28 @@ export default function LiveDashboard({
                   >
                     {nameOf[pid]}
                     <span className="rounded bg-slate-950/25 px-1.5 py-0.5 text-[10px] font-black">
-                      {to}
+                      {POSITION_BY_ID[to].label}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {diff?.moving.length > 0 && (
+            <div className="mt-3 border-t border-white/20 pt-3">
+              <p className="mb-2 text-center text-[10px] font-black uppercase tracking-[0.2em] text-amber-100">
+                Already on — shout their new spot
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {diff.moving.map(({ pid, to }) => (
+                  <span
+                    key={pid}
+                    className="inline-flex items-center gap-1.5 rounded-lg border-2 border-amber-300 bg-slate-950/40 px-3 py-2 text-sm font-black uppercase tracking-tight text-amber-100"
+                  >
+                    {nameOf[pid]}
+                    <span className="rounded bg-amber-300 px-1.5 py-0.5 text-[10px] font-black text-slate-950">
+                      {POSITION_BY_ID[to].label}
                     </span>
                   </span>
                 ))}
@@ -382,65 +401,83 @@ export default function LiveDashboard({
           </Card>
         ) : (
           <div className="space-y-2">
-            {/* Going on, up top and unmissable. */}
+            {/* ---- Coming on from the bench ---- */}
             <Card className="border-lime-600/40 bg-lime-500/5 p-3">
-              <p className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-lime-400">
+              <p className="mb-2 text-[11px] font-black uppercase tracking-[0.2em] text-lime-400">
                 Going On ({diff.comingIn.length})
               </p>
               {diff.comingIn.length === 0 ? (
                 <p className="text-sm font-semibold text-slate-500">Nobody — same nine stay out.</p>
               ) : (
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-1.5">
                   {diff.comingIn.map(({ pid, to }) => (
+                    <CallRow key={pid} name={nameOf[pid]} to={to} tone="on" />
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* ---- Already out there. Switchers first, and loud, because
+                   these are the ones nobody thinks to tell. ---- */}
+            <Card className="p-3">
+              <div className="mb-2 flex items-baseline justify-between gap-2">
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-300">
+                  Staying On ({diff.remaining.length})
+                </p>
+                {diff.moving.length > 0 ? (
+                  <span className="shrink-0 rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-slate-950">
+                    {diff.moving.length} switching
+                  </span>
+                ) : (
+                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                    no spot changes
+                  </span>
+                )}
+              </div>
+              {diff.remaining.length === 0 ? (
+                <p className="text-sm font-semibold text-slate-500">
+                  Whole outfield changes — nobody stays on.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {diff.remaining.map((r) => (
+                    <CallRow
+                      key={r.pid}
+                      name={nameOf[r.pid]}
+                      to={r.to}
+                      from={r.moved ? r.from : null}
+                      tone={r.moved ? 'move' : 'hold'}
+                    />
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* ---- Off ---- */}
+            <Card className="border-red-900/40 p-3">
+              <p className="mb-2 text-[11px] font-black uppercase tracking-[0.2em] text-red-300">
+                Coming Off ({diff.goingOut.length})
+              </p>
+              {diff.goingOut.length === 0 ? (
+                <p className="text-sm font-semibold text-slate-500">Nobody.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {diff.goingOut.map((pid) => (
                     <span
                       key={pid}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-lime-500/50 bg-lime-500/10 px-2.5 py-2 text-sm font-black uppercase tracking-tight text-lime-200"
+                      className="inline-flex items-center rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-sm font-black uppercase tracking-tight text-red-200"
                     >
                       {nameOf[pid]}
-                      <Tag group={POSITION_BY_ID[to].group}>{to}</Tag>
                     </span>
                   ))}
                 </div>
               )}
             </Card>
 
-            {/* Every position that changes hands, in the order you'd shout it. */}
-            <Card className="divide-y divide-slate-800">
-              {changes.length === 0 ? (
-                <p className="p-4 text-center text-sm font-semibold text-slate-500">
-                  No changes next shift.
-                </p>
-              ) : (
-                changes.map((c) => (
-                  <div key={c.posId} className="flex items-center gap-2 px-3 py-2.5">
-                    <Tag group={POSITION_BY_ID[c.posId].group} className="w-10 justify-center">
-                      {c.posId}
-                    </Tag>
-                    <span
-                      className={`flex-1 truncate text-sm font-black uppercase tracking-tight ${
-                        c.outToBench ? 'text-red-300' : 'text-slate-400'
-                      }`}
-                    >
-                      {c.out ? nameOf[c.out] : '—'}
-                    </span>
-                    <span className="shrink-0 text-slate-600">→</span>
-                    <span
-                      className={`flex-1 truncate text-right text-sm font-black uppercase tracking-tight ${
-                        c.inFromBench ? 'text-lime-300' : 'text-amber-300'
-                      }`}
-                    >
-                      {c.in ? nameOf[c.in] : '—'}
-                    </span>
-                  </div>
-                ))
-              )}
-            </Card>
-
-            <p className="px-1 text-[11px] text-slate-500">
-              <span className="font-bold text-red-300">Red</span> comes off ·{' '}
+            <p className="px-1 text-[11px] leading-relaxed text-slate-500">
               <span className="font-bold text-lime-300">Green</span> comes on from the bench ·{' '}
-              <span className="font-bold text-amber-300">Amber</span> is already out there, just
-              switching spots.
+              <span className="font-bold text-amber-300">Amber</span> is already out there and
+              moving to a new spot · grey holds the same position.
             </p>
           </div>
         )}
@@ -459,6 +496,52 @@ export default function LiveDashboard({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * One shoutable line: who, and where they are standing next shift.
+ * Position is spelled out ("Center Mid", not "CM") because this is read aloud
+ * across a pitch, not scanned like a spreadsheet.
+ */
+function CallRow({ name, to, from, tone }) {
+  const pos = POSITION_BY_ID[to];
+  const shell = {
+    on: 'border-lime-500/50 bg-lime-500/10',
+    move: 'border-amber-400/70 bg-amber-400/15',
+    hold: 'border-slate-700 bg-slate-800/50',
+  }[tone];
+
+  return (
+    <div className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 ${shell}`}>
+      <span
+        className={`min-w-0 flex-1 truncate text-base font-black uppercase tracking-tight ${
+          tone === 'hold' ? 'text-slate-300' : 'text-white'
+        }`}
+      >
+        {name}
+      </span>
+
+      {from && (
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-amber-200/70">
+          was {from}
+        </span>
+      )}
+
+      <span
+        className={`shrink-0 text-sm font-black uppercase tracking-tight ${
+          tone === 'hold' ? 'text-slate-400' : tone === 'move' ? 'text-amber-200' : 'text-lime-200'
+        }`}
+      >
+        {pos.label}
+      </span>
+
+      {tone === 'move' && (
+        <span className="shrink-0 rounded bg-amber-400 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-950">
+          Move
+        </span>
+      )}
     </div>
   );
 }

@@ -590,42 +590,38 @@ export function diffShifts(currentShift, nextShift) {
     if (nextShift?.[posId]) nxt[nextShift[posId]] = posId;
   });
 
+  // Sort everything by where the player ENDS UP, in pitch order (forwards,
+  // midfield, defence, keeper). That is the order a coach reads them out in,
+  // so the panel can be shouted straight down the list.
+  const byNewPosition = (a, b) => POSITION_IDS.indexOf(a.to) - POSITION_IDS.indexOf(b.to);
+
   const goingOut = Object.keys(cur).filter((pid) => !(pid in nxt));
   const comingIn = Object.keys(nxt)
     .filter((pid) => !(pid in cur))
-    .map((pid) => ({ pid, to: nxt[pid] }));
+    .map((pid) => ({ pid, to: nxt[pid] }))
+    .sort(byNewPosition);
   const moving = Object.keys(nxt)
     .filter((pid) => pid in cur && cur[pid] !== nxt[pid])
-    .map((pid) => ({ pid, from: cur[pid], to: nxt[pid] }));
-  const staying = Object.keys(nxt).filter((pid) => pid in cur && cur[pid] === nxt[pid]);
+    .map((pid) => ({ pid, from: cur[pid], to: nxt[pid] }))
+    .sort(byNewPosition);
+  const staying = Object.keys(nxt)
+    .filter((pid) => pid in cur && cur[pid] === nxt[pid])
+    .map((pid) => ({ pid, from: cur[pid], to: nxt[pid] }))
+    .sort(byNewPosition);
 
-  return { goingOut, comingIn, moving, staying };
-}
+  /**
+   * Everyone who is ALREADY on the field and stays there, whether or not they
+   * change spot — each tagged with `moved`. The switchers are the ones that
+   * actually need shouting ("Desmond, Center Mid!"), but the coach also wants
+   * to be able to run the whole back line by name, so the players holding
+   * their position are in here too rather than being dropped.
+   */
+  const remaining = [
+    ...moving.map((m) => ({ ...m, moved: true })),
+    ...staying.map((m) => ({ ...m, moved: false })),
+  ].sort(byNewPosition);
 
-/**
- * Position-by-position view of the next substitution — the form a coach can
- * actually call out at the touchline: "Left Mid, Calvin off, Leo on."
- * Each row is a position whose occupant changes, tagged with whether the
- * incoming player is coming off the bench (a true sub) or just sliding over
- * from another spot (a move).
- */
-export function positionChanges(currentShift, nextShift) {
-  const onNow = new Set(POSITION_IDS.map((id) => currentShift?.[id]).filter(Boolean));
-  const onNext = new Set(POSITION_IDS.map((id) => nextShift?.[id]).filter(Boolean));
-
-  return POSITION_IDS.filter((id) => (currentShift?.[id] || null) !== (nextShift?.[id] || null)).map(
-    (id) => {
-      const out = currentShift?.[id] || null;
-      const incoming = nextShift?.[id] || null;
-      return {
-        posId: id,
-        out,
-        in: incoming,
-        inFromBench: !!incoming && !onNow.has(incoming), // genuinely coming on
-        outToBench: !!out && !onNext.has(out),           // genuinely coming off
-      };
-    }
-  );
+  return { goingOut, comingIn, moving, staying, remaining };
 }
 
 /**

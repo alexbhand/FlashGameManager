@@ -25,7 +25,7 @@ browser's localStorage — there is no backend and nothing leaves the device.
 ## The four views
 
 - **Setup** — attendance, position preferences (season-long), "Wants Goalie Today?" (per game), build lineup.
-- **Live** — half clock counting up to 30:00, derived shift countdown, substitution alert, who's on / who's benched, next-shift preview.
+- **Live** — half clock counting up to 30:00, derived shift countdown, substitution alert, who's on / who's benched, and a next-shift preview split into three shoutable lists: **Going On** (from the bench), **Staying On** (everyone already out there, with position switchers flagged amber), and **Coming Off**. Positions are spelled out — "Center Mid", not "CM" — because the list is read aloud across a pitch.
 - **Matrix** — the full 8 × 9 grid, split into 1st/2nd half so it fits a phone. Tap any cell to swap.
 - **Season** — cumulative shifts per player, broken out by GK / D / M / F.
 
