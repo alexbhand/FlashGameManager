@@ -25,6 +25,46 @@ export const POSITION_BY_ID = Object.fromEntries(POSITIONS.map((p) => [p.id, p])
 /** Preference options offered on the setup screen. */
 export const PREFERENCE_GROUPS = ['Defense', 'Midfield', 'Forward'];
 
+// --- Coach's line-balance ratings ------------------------------------------
+/**
+ * Three buckets, not a 1-16 ranking. Ranking sixteen kids twice is thirty-two
+ * fiddly drags on a phone, and it implies a precision no one has — whether the
+ * 7th best defender is really better than the 8th is not a real question. The
+ * thing a coach actually knows is "I don't want those two back there
+ * together", and buckets say exactly that.
+ *
+ * Everyone starts Medium, so the feature does nothing at all until a coach
+ * deliberately marks someone.
+ */
+export const STRENGTH_LEVELS = ['High', 'Medium', 'Low'];
+export const DEFAULT_STRENGTH = 'Medium';
+export const STRENGTH_VALUE = { High: 2, Medium: 1, Low: 0 };
+
+/**
+ * Which rating matters where. Defenders are judged on defending, forwards on
+ * attacking, and midfielders on both ends at once — a midfield is where a
+ * one-dimensional player is most exposed, so their two ratings are averaged
+ * rather than taking the flattering one.
+ */
+export function strengthForLine(player, group) {
+  const off = STRENGTH_VALUE[player?.offense] ?? 1;
+  const def = STRENGTH_VALUE[player?.defense] ?? 1;
+  if (group === 'Defense') return def;
+  if (group === 'Forward') return off;
+  return (off + def) / 2;
+}
+
+/** Below Medium for the demands of that line. */
+export const WEAK_THRESHOLD = 0.75;
+export const isWeakOnLine = (player, group) => strengthForLine(player, group) < WEAK_THRESHOLD;
+
+/** The three outfield lines, for balance checks. */
+export const LINES = [
+  { group: 'Defense', ids: ['LD', 'CD', 'RD'] },
+  { group: 'Midfield', ids: ['LM', 'CM', 'RM'] },
+  { group: 'Forward', ids: ['LF', 'RF'] },
+];
+
 // --- Game shape ------------------------------------------------------------
 export const HALVES = 2;
 export const HALF_MINUTES = 30;
@@ -67,6 +107,9 @@ export const createPlayer = (name) => ({
   isPresent: true,          // attendance toggle, reset each game day
   preferredPositions: [],   // season-long: any of Defense / Midfield / Forward
   wantsGoalieToday: false,  // daily override that drives GK allocation
+  // Season-long coach's ratings, used only to keep lines balanced.
+  offense: DEFAULT_STRENGTH,
+  defense: DEFAULT_STRENGTH,
   // --- availability window, in shift indexes (0-7) ------------------------
   // Normally the whole game. A kid who turns up at half time gets
   // arriveShift: 4; one who leaves early (or picks up a knock) gets

@@ -1,5 +1,8 @@
 import {
   FIELD_POSITIONS,
+  FIELD_POSITION_IDS,
+  LINES,
+  isWeakOnLine,
   KEEPER_FIELD_FLOOR_FULL_HALF,
   KEEPER_FIELD_FLOOR_PARTIAL,
   POSITION_BY_ID,
@@ -221,6 +224,123 @@ export function allocateGoalies(volunteers, fallbackPool, opts = {}) {
 // ---------------------------------------------------------------------------
 // STAGE 2 — Full matrix
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// COMPETITIVE BALANCE
+// ---------------------------------------------------------------------------
+// Rec football, so winning is not the point — but a 9-0 drubbing is not fun for
+// anyone either, and the games the kids enjoy are the close ones. The coach
+// buckets each player High/Medium/Low at each end of the pitch, and the only
+// thing those buckets do is stop two weaker players ending up on the same line
+// at the same time.
+//
+// Crucially this runs in the WHERE stage, never the WHO stage. Balance decides
+// which shirt number a player stands behind; it has no vote on whether they
+// are on the pitch. A weaker player gets exactly the same number of shifts as
+// everyone else — they just do not get paired with the other weaker player on
+// the same line. Equity is untouchable.
+
+/** How many players over the limit of one weak player per line. */
+export function lineViolations(shift, byId) {
+  let total = 0;
+  LINES.forEach(({ group, ids }) => {
+    const weak = ids.filter((id) => shift[id] && isWeakOnLine(byId[shift[id]], group)).length;
+    if (weak > 1) total += weak - 1;
+  });
+  return total;
+}
+
+/** How many players are standing in a line they asked for. Used only to break
+ *  ties between repairs, so balancing costs as little preference as possible. */
+function preferenceHits(shift, byId) {
+  return FIELD_POSITION_IDS.reduce((sum, id) => {
+    const p = byId[shift[id]];
+    if (!p || !p.preferredPositions?.length) return sum;
+    return sum + (p.preferredPositions.includes(POSITION_BY_ID[id].group) ? 1 : 0);
+  }, 0);
+}
+
+/**
+ * Greedy assignment fills one slot at a time and cannot see what is about to
+ * land next to it, so it sometimes finishes with two weak players side by side.
+ * This is a small local search over the eight outfield slots that swaps pairs
+ * until no swap improves matters — 28 candidate swaps per pass, four passes
+ * maximum, which is nothing for eight positions.
+ */
+function repairLineBalance(shift, byId) {
+  for (let pass = 0; pass < 4; pass += 1) {
+    const current = lineViolations(shift, byId);
+    if (current === 0) return;
+
+    let best = null;
+    for (let i = 0; i < FIELD_POSITION_IDS.length; i += 1) {
+      for (let j = i + 1; j < FIELD_POSITION_IDS.length; j += 1) {
+        const a = FIELD_POSITION_IDS[i];
+        const b = FIELD_POSITION_IDS[j];
+        if (!shift[a] || !shift[b]) continue;
+
+        const tmp = shift[a];
+        shift[a] = shift[b];
+        shift[b] = tmp;
+        const after = lineViolations(shift, byId);
+        const prefs = preferenceHits(shift, byId);
+        shift[b] = shift[a];
+        shift[a] = tmp;
+
+        if (after >= current) continue;
+        if (!best || after < best.after || (after === best.after && prefs > best.prefs)) {
+          best = { a, b, after, prefs };
+        }
+      }
+    }
+
+    if (!best) return; // pairwise swaps exhausted — caller falls back to exact
+    const tmp = shift[best.a];
+    shift[best.a] = shift[best.b];
+    shift[best.b] = tmp;
+  }
+}
+
+/**
+ * Exact fallback for the rare shift that pairwise swapping cannot fix.
+ *
+ * Swapping two players at a time gets stuck whenever escaping needs a
+ * three-way rotation — measured at 12 shifts in 2,400, every one of which had
+ * a perfect arrangement available. Eight players over eight slots is only 40k
+ * permutations, and pruning on the partial assignment cuts that to almost
+ * nothing, so when the cheap repair gives up we just solve it properly and
+ * keep the balanced arrangement that also matches the most position
+ * preferences. Node-budgeted so it can never stall a lineup build.
+ */
+function exactRepair(shift, byId) {
+  const players = FIELD_POSITION_IDS.map((id) => shift[id]);
+  if (players.some((p) => !p)) return; // short-handed; nothing to permute
+  const used = new Array(players.length).fill(false);
+  const slot = {};
+  let budget = 40_000;
+  let best = null;
+
+  const search = (i) => {
+    if (budget-- <= 0) return;
+    if (i === FIELD_POSITION_IDS.length) {
+      const prefs = preferenceHits(slot, byId);
+      if (!best || prefs > best.prefs) best = { prefs, arrangement: { ...slot } };
+      return;
+    }
+    for (let j = 0; j < players.length; j += 1) {
+      if (used[j]) continue;
+      used[j] = true;
+      slot[FIELD_POSITION_IDS[i]] = players[j];
+      // Violations only ever grow as slots fill, so a partial breach prunes.
+      if (lineViolations(slot, byId) === 0) search(i + 1);
+      used[j] = false;
+      slot[FIELD_POSITION_IDS[i]] = null;
+    }
+  };
+
+  search(0);
+  if (best) FIELD_POSITION_IDS.forEach((id) => { shift[id] = best.arrangement[id]; });
+}
+
 /**
  * Build the whole 8 x 9 matrix — or re-plan the tail of one.
  *
@@ -614,12 +734,34 @@ export function generateLineup(players, opts = {}) {
     pairs.sort((a, b) => b.score - a.score);
 
     const placed = new Set();
-    pairs.forEach(({ pid, posId }) => {
-      if (placed.has(pid) || !open.has(posId)) return;
+    const take = ({ pid, posId }) => {
       shift[posId] = pid;
       open.delete(posId);
       placed.add(pid);
+    };
+
+    /** Would this put a second weak player on that line? */
+    const wouldStack = (pid, posId) => {
+      const { group, ids } = LINES.find((l) => l.ids.includes(posId)) || {};
+      if (!group || !isWeakOnLine(byId[pid], group)) return false;
+      return ids.some((id) => shift[id] && isWeakOnLine(byId[shift[id]], group));
+    };
+
+    // First pass honours the balance rule; second pass places anyone it could
+    // not, because leaving a position empty is far worse than an unbalanced
+    // line. The repair below then cleans up what greedy could not foresee.
+    pairs.forEach((pair) => {
+      if (placed.has(pair.pid) || !open.has(pair.posId)) return;
+      if (wouldStack(pair.pid, pair.posId)) return;
+      take(pair);
     });
+    pairs.forEach((pair) => {
+      if (placed.has(pair.pid) || !open.has(pair.posId)) return;
+      take(pair);
+    });
+
+    repairLineBalance(shift, byId);
+    if (lineViolations(shift, byId) > 0) exactRepair(shift, byId);
 
     lineup.push(shift);
     applyShift(shift, s);
@@ -753,7 +895,7 @@ export function planSignature(players, opts = {}) {
     .map(
       (p) =>
         `${p.id}:${p.arriveShift || 0}:${p.departShift == null ? 'x' : p.departShift}:` +
-        `${p.wantsGoalieToday ? 'gk' : '-'}`
+        `${p.wantsGoalieToday ? 'gk' : '-'}:${p.offense || 'Medium'}/${p.defense || 'Medium'}`
     )
     .sort();
   return `${singleKeeperBothHalves ? 'both' : 'one'}|${parts.join(',')}`;

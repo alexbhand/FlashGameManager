@@ -1,5 +1,7 @@
 import {
+  DEFAULT_STRENGTH,
   POSITION_IDS,
+  STRENGTH_LEVELS,
   TOTAL_SHIFTS,
   ROSTER_NAMES,
   createPlayer,
@@ -47,6 +49,8 @@ export function validateRoster(saved) {
             Number.isInteger(p.departShift) && p.departShift > 0 && p.departShift <= TOTAL_SHIFTS
               ? p.departShift
               : null,
+          offense: STRENGTH_LEVELS.includes(p.offense) ? p.offense : DEFAULT_STRENGTH,
+          defense: STRENGTH_LEVELS.includes(p.defense) ? p.defense : DEFAULT_STRENGTH,
         });
       });
     }

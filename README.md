@@ -24,7 +24,7 @@ browser's localStorage — there is no backend and nothing leaves the device.
 
 ## The four views
 
-- **Setup** — attendance, position preferences (season-long), "Wants Goalie Today?" (per game), build lineup.
+- **Setup** — attendance, position preferences (season-long), "Wants Goalie Today?" (per game), build lineup, and **Coach's Ratings**.
 - **Live** — half clock counting up to 30:00, derived shift countdown, substitution alert, who's on / who's benched, and a next-shift preview split into three shoutable lists: **Going On** (from the bench), **Staying On** (everyone already out there, with position switchers flagged amber), and **Coming Off**. Positions are spelled out — "Center Mid", not "CM" — because the list is read aloud across a pitch.
 - **Matrix** — the full 8 × 9 grid, split into 1st/2nd half so it fits a phone. Tap any cell to swap.
 - **Season** — cumulative shifts per player, broken out by GK / D / M / F.
@@ -150,6 +150,43 @@ order: a volunteer who has not already done a full half → a drafted outfield
 player with the fewest season GK shifts → only as a last resort a volunteer who
 already kept 4. Without that middle step, one kid losing their keeper partner
 means they keep all 60 minutes. The app says exactly what it did, in one banner.
+
+## Competitive balance
+
+Rec football, so winning is not the point — but a 9-0 drubbing is no fun either,
+and the games kids enjoy are the close ones. **Setup → Coach's Ratings** buckets
+each player High / Medium / Low at each end of the pitch, and those buckets do
+exactly one thing: stop two weaker players ending up on the same line at the
+same time.
+
+Buckets rather than a 1-16 ranking, on purpose. Ranking sixteen kids twice is
+thirty-two fiddly drags on a phone, and it implies a precision nobody has —
+whether the 7th best defender beats the 8th is not a real question. What a coach
+actually knows is "not those two together", and buckets say that directly.
+
+Which rating applies depends on the line: defenders are judged on defending,
+forwards on attacking, and midfielders on both at once (their two ratings are
+averaged, since midfield is where a one-dimensional player is most exposed).
+
+**It never costs anyone playing time.** Balance runs in the *where* stage, not
+the *who* stage — it decides which shirt a player stands behind, and has no vote
+on whether they are on the pitch. Measured over 2,400 shifts with a realistic
+set of ratings: **zero stacked lines**, playing-time spread unchanged at ≤1
+shift, and the weaker players averaged *slightly more* minutes than the stronger
+ones. The only cost is position preference, down from 81% to 79%.
+
+Greedy assignment fills one slot at a time and cannot see what lands next to it,
+so a pairwise-swap repair runs afterwards. That still stuck in a local minimum on
+12 shifts in 2,400 — cases needing a three-way rotation to escape — so an exact
+solver takes over when it gives up. Eight players over eight slots is 40k
+permutations, pruned to almost nothing, and it only runs on the ~0.5% of shifts
+that need it.
+
+Everyone starts Medium, so the feature is inert until a coach deliberately marks
+someone. Ratings are season-long and live behind their own button rather than on
+the roster list: these are judgements about children, and the phone gets handed
+to assistants and left on benches. Nothing from this screen is ever rendered on
+the Live or Matrix views.
 
 ## Keeping the plan in sync with Setup
 

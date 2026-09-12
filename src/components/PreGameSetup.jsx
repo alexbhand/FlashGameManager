@@ -16,10 +16,17 @@ export default function PreGameSetup({
   lineupReady,
   onGoLive,
   seasonGkShifts = {},
+  onOpenRatings,
 }) {
   const present = useMemo(() => roster.filter((p) => p.isPresent), [roster]);
   const keepers = useMemo(() => present.filter((p) => p.wantsGoalieToday), [present]);
   const target = present.length ? TOTAL_SLOTS / present.length : 0;
+
+  // How many players the coach has moved off the neutral default.
+  const ratedCount = useMemo(
+    () => roster.filter((p) => p.offense !== 'Medium' || p.defense !== 'Medium').length,
+    [roster]
+  );
 
   // Who has been carrying the gloves this season, busiest first.
   const keeperLoad = useMemo(
@@ -76,6 +83,10 @@ export default function PreGameSetup({
             All Out
           </Button>
         </div>
+
+        <Button variant="outline" className="mt-3 w-full text-sm" onClick={onOpenRatings}>
+          Coach&apos;s Ratings{ratedCount > 0 ? ` · ${ratedCount} set` : ''}
+        </Button>
 
         <div className="mt-3 space-y-2">
           <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400">

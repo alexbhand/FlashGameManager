@@ -30,6 +30,7 @@ import LiveDashboard from './components/LiveDashboard.jsx';
 import MatrixView from './components/MatrixView.jsx';
 import SeasonHistory from './components/SeasonHistory.jsx';
 import RosterChangeSheet from './components/RosterChangeSheet.jsx';
+import CoachRatingsSheet from './components/CoachRatingsSheet.jsx';
 import TabBar from './components/TabBar.jsx';
 
 // ===========================================================================
@@ -93,6 +94,7 @@ export default function App() {
   const [tab, setTab] = useState('setup');
   const [warnings, setWarnings] = useState([]);
   const [rosterSheetOpen, setRosterSheetOpen] = useState(false);
+  const [ratingsOpen, setRatingsOpen] = useState(false);
   // One tap of undo after a shift change, for the accidental press.
   const [undoPoint, setUndoPoint] = useState(null);
 
@@ -263,6 +265,18 @@ export default function App() {
     (playerId) => applyAvailability(playerId, { arriveShift: 0, departShift: null }),
     [applyAvailability]
   );
+
+  /** Coach's line-balance buckets. Season-long, like position preferences. */
+  const handleRate = useCallback(
+    (playerId, end, level) =>
+      setRoster((prev) => prev.map((p) => (p.id === playerId ? { ...p, [end]: level } : p))),
+    [setRoster]
+  );
+
+  const handleResetRatings = useCallback(() => {
+    if (!window.confirm('Set every player back to Medium at both ends?')) return;
+    setRoster((prev) => prev.map((p) => ({ ...p, offense: 'Medium', defense: 'Medium' })));
+  }, [setRoster]);
 
   const handleLineupChange = useCallback(
     (shiftIndex, positionId, playerId) =>
@@ -445,6 +459,7 @@ export default function App() {
             lineupReady={lineupReady}
             onGoLive={() => setTab('live')}
             seasonGkShifts={seasonGkShifts}
+            onOpenRatings={() => setRatingsOpen(true)}
           />
         )}
 
@@ -505,6 +520,14 @@ export default function App() {
           />
         )}
       </main>
+
+      <CoachRatingsSheet
+        open={ratingsOpen}
+        roster={roster}
+        onRate={handleRate}
+        onResetAll={handleResetRatings}
+        onClose={() => setRatingsOpen(false)}
+      />
 
       <RosterChangeSheet
         open={rosterSheetOpen}
