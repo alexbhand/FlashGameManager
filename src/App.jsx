@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   SHIFTS_PER_HALF,
   SHIFT_MS,
@@ -167,9 +167,12 @@ export default function App() {
    * mid-game roster changes safe.
    */
   const buildLineup = useCallback(
-    (fromShift = 0, rosterOverride = null) => {
-      // Bump the seed each time so "Regenerate" genuinely reshuffles.
-      const seed = (settings.seed || 1) + 1;
+    (fromShift = 0, rosterOverride = null, { reshuffle = true } = {}) => {
+      // "Regenerate" bumps the seed so you genuinely get a different plan.
+      // Automatic rebuilds keep it, so the lineup only moves in response to the
+      // change you actually made rather than reshuffling the whole team every
+      // time you tick a box.
+      const seed = reshuffle ? (settings.seed || 1) + 1 : settings.seed || 1;
       const rosterUsed = rosterOverride || roster;
       const result = generateLineup(rosterUsed, {
         seed,
@@ -203,6 +206,17 @@ export default function App() {
   const handleGenerate = useCallback(() => buildLineup(0), [buildLineup]);
 
   /**
+   * Nothing has happened yet: first half, first shift, clock untouched. While
+   * this holds, changing a Setup choice can safely re-plan the whole game.
+   */
+  const gameNotStarted =
+    clock.status === 'pregame' &&
+    clock.half === 1 &&
+    clock.shiftInHalf === 0 &&
+    clock.accumulated === 0 &&
+    !clock.running;
+
+  /**
    * The first shift we are allowed to touch. Before kickoff that is the whole
    * game; once play has started it is the NEXT shift, because the nine players
    * currently on the pitch stay there until the coach subs at a stoppage.
@@ -217,7 +231,7 @@ export default function App() {
     (playerId, patch) => {
       const next = roster.map((p) => (p.id === playerId ? { ...p, ...patch } : p));
       setRoster(next);
-      if (replanFrom < TOTAL_SHIFTS) buildLineup(replanFrom, next);
+      if (replanFrom < TOTAL_SHIFTS) buildLineup(replanFrom, next, { reshuffle: false });
     },
     [roster, replanFrom, setRoster, buildLineup]
   );
@@ -251,6 +265,28 @@ export default function App() {
       setLineup((prev) => applySwap(prev, shiftIndex, positionId, playerId)),
     [setLineup]
   );
+
+  /**
+   * Before kickoff, keep the plan in step with Setup automatically — tick a
+   * goalie, flip attendance, and the lineup just follows. No nudge to notice
+   * and no button to remember.
+   *
+   * Deliberately limited to before the clock starts. Re-planning mid-game
+   * would pull players off the pitch the moment you touched a toggle, so once
+   * play is under way the stale banner asks first. The rebuild stores a
+   * matching signature, which clears `stale` and stops this re-firing.
+   */
+  const autoBuiltFor = useRef(null);
+  useEffect(() => {
+    if (!lineupReady || !stale || !gameNotStarted) return;
+    // Belt and braces: never auto-build twice for the same set of choices. The
+    // rebuild clears `stale` on its own, but this app runs unattended on a
+    // phone at the side of a pitch, and a rebuild loop would flatten the
+    // battery and hammer localStorage. One signature, one automatic rebuild.
+    if (autoBuiltFor.current === currentSignature) return;
+    autoBuiltFor.current = currentSignature;
+    buildLineup(0, null, { reshuffle: false });
+  }, [lineupReady, stale, gameNotStarted, currentSignature, buildLineup]);
 
   // --- Clock actions --------------------------------------------------------
   const handleStart = useCallback(() => {
@@ -402,7 +438,7 @@ export default function App() {
               onEndHalf={handleEndHalf}
               onFinishGame={handleFinishGame}
               onResetGame={handleResetGame}
-              stale={stale}
+              stale={stale && !gameNotStarted}
               onRegenerate={handleGenerate}
               onOpenMatrix={() => setTab('matrix')}
               onOpenRosterChange={() => setRosterSheetOpen(true)}

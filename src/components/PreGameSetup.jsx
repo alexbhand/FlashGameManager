@@ -227,8 +227,10 @@ export default function PreGameSetup({
         )}
 
         <p className="px-2 text-center text-xs leading-relaxed text-slate-500">
-          Regenerate shuffles the plan with a new seed. Attendance and goalie picks are saved
-          automatically — position preferences carry over all season.
+          {lineupReady
+            ? 'The lineup updates itself as you change attendance or goalie picks, right up until you start the clock. Regenerate shuffles it into a different plan. '
+            : ''}
+          Position preferences carry over all season.
         </p>
       </div>
     </div>
