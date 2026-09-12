@@ -1,5 +1,10 @@
 # FLASH — Game Day Manager
 
+> **Picking this up cold?** Read [STATE_OF_THE_PROJECT.md](STATE_OF_THE_PROJECT.md)
+> first — architecture, state invariants, measured guarantees, known constraints,
+> and the list of bugs that were already found and fixed. Verification harnesses
+> are in [`test/`](test/README.md).
+
 Mobile-first game-day tool for a 9v9 youth rec soccer team. Equal playing time,
 daily goalie opt-in, live dual clocks, manual overrides, season-long history.
 
