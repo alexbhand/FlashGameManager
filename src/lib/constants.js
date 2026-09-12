@@ -102,6 +102,15 @@ export const TOTAL_SLOTS = TOTAL_SHIFTS * SLOTS_PER_SHIFT; // 72
  * purpose. Set both to 0 to treat a GK shift as just another shift.
  */
 export const KEEPER_FIELD_FLOOR_FULL_HALF = 2;
+
+/**
+ * Hard cap on how long a DRAFTED keeper stands in goal — someone who never
+ * asked for the job because too few (or no) players volunteered. Two shifts,
+ * 15 minutes, and then it is somebody else's turn. A volunteer can take a full
+ * half, or the whole game if they ask for it; nobody gets handed half a match
+ * of a job they did not want.
+ */
+export const DRAFTED_KEEPER_MAX_SHIFTS = 2;
 export const KEEPER_FIELD_FLOOR_PARTIAL = 1;
 
 export const ROSTER_NAMES = [

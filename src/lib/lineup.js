@@ -3,6 +3,7 @@ import {
   FIELD_POSITION_IDS,
   LINES,
   needsSupportOn,
+  DRAFTED_KEEPER_MAX_SHIFTS,
   KEEPER_FIELD_FLOOR_FULL_HALF,
   KEEPER_FIELD_FLOOR_PARTIAL,
   POSITION_BY_ID,
@@ -170,20 +171,36 @@ export function allocateGoalies(volunteers, fallbackPool, opts = {}) {
 
   let keepers = byLeastKept(volunteers);
 
-  if (keepers.length === 0) {
-    // Nobody raised their hand. Don't leave the net empty: draft the two
-    // players who have kept the least this season and flag it loudly.
-    keepers = byLeastKept(fallbackPool).slice(0, 2);
-    if (keepers.length) {
-      warnings.push(
-        `No one volunteered for goalie. Drafted ${keepers
-          .map((k) => k.name)
-          .join(' & ')} (least GK time this season) — override on the Matrix tab.`
-      );
-    }
-  }
+  /**
+   * Spread the quarter blocks over whoever is available, so a drafted keeper
+   * never does more than DRAFTED_KEEPER_MAX_SHIFTS in a row. Falls back to
+   * cycling only if the squad is too small to field four different keepers.
+   */
+  const draftQuarters = (pool, blocks) => {
+    const picked = [];
+    blocks.forEach((block, i) => {
+      const who = pool[i % pool.length];
+      if (!who) return;
+      assign(block, who.id);
+      if (!picked.includes(who)) picked.push(who);
+    });
+    return picked;
+  };
 
-  if (keepers.length === 0) return { slots, warnings };
+  if (keepers.length === 0) {
+    // Nobody raised their hand. Don't leave the net empty — but don't hand
+    // anyone half a match of a job they never asked for either: four drafted
+    // keepers, 15 minutes each.
+    const pool = byLeastKept(fallbackPool);
+    if (pool.length === 0) return { slots, warnings };
+    const picked = draftQuarters(pool, QUARTER_BLOCKS);
+    warnings.push(
+      `No one volunteered for goalie. Drafted ${picked.map((k) => k.name).join(', ')} ` +
+        `for ${(DRAFTED_KEEPER_MAX_SHIFTS * 7.5).toFixed(0)} minutes each ` +
+        `(least GK time this season) — override on the Matrix tab.`
+    );
+    return { slots, warnings };
+  }
 
   // --- One keeper: a full half, or the whole game if they asked for it -----
   if (keepers.length === 1) {
@@ -193,14 +210,20 @@ export function allocateGoalies(volunteers, fallbackPool, opts = {}) {
       return { slots, warnings };
     }
     assign(HALF_BLOCKS[0], only.id);
-    const backup = byLeastKept(fallbackPool.filter((p) => p.id !== only.id))[0];
-    assign(HALF_BLOCKS[1], (backup || only).id);
-    if (backup) {
-      warnings.push(
-        `${only.name} keeps the 1st half. ${backup.name} was drafted for the 2nd — ` +
-          `use "Goalie plays both halves" on Setup if ${only.name} wants all 60.`
-      );
+    // The other half goes to drafted players in 15-minute turns, not to one
+    // person for the whole 30.
+    const pool = byLeastKept(fallbackPool.filter((p) => p.id !== only.id));
+    if (pool.length === 0) {
+      assign(HALF_BLOCKS[1], only.id);
+      return { slots, warnings };
     }
+    const picked = draftQuarters(pool, [QUARTER_BLOCKS[2], QUARTER_BLOCKS[3]]);
+    warnings.push(
+      `${only.name} keeps the 1st half. ${picked.map((k) => k.name).join(' and ')} ` +
+        `${picked.length > 1 ? 'were' : 'was'} drafted for the 2nd, ` +
+        `${(DRAFTED_KEEPER_MAX_SHIFTS * 7.5).toFixed(0)} minutes each — ` +
+        `use "Goalie plays both halves" on Setup if ${only.name} wants all 60.`
+    );
     return { slots, warnings };
   }
 
@@ -449,11 +472,14 @@ export function generateLineup(players, opts = {}) {
 
   const gkRepairs = {}; // collapsed into one warning per change, after the loop
   const gkCountSoFar = (id) => gkSlots.reduce((n, x) => n + (x === id ? 1 : 0), 0);
+  /** A volunteer may keep a half; anyone drafted is capped at 15 minutes. */
+  const keeperCap = (player) =>
+    player?.wantsGoalieToday ? SHIFTS_PER_HALF : DRAFTED_KEEPER_MAX_SHIFTS;
   const pickKeeper = (pool, s) => {
     if (!pool.length) return null;
     // Prefer whoever kept the previous shift, so blocks stay whole.
     const prev = s > 0 ? gkSlots[s - 1] : null;
-    const carry = pool.find((p) => p.id === prev && gkCountSoFar(prev) < SHIFTS_PER_HALF);
+    const carry = pool.find((p) => p.id === prev && gkCountSoFar(prev) < keeperCap(p));
     if (carry) return carry;
     return [...pool].sort(
       (a, b) =>
@@ -473,8 +499,8 @@ export function generateLineup(players, opts = {}) {
     const current = roster.find((p) => p.id === gkSlots[s]);
     if (current && isAvailableAt(current, s)) continue;
     const pool = availableAt(s);
-    const fresh = pool.filter((p) => p.wantsGoalieToday && gkCountSoFar(p.id) < SHIFTS_PER_HALF);
-    const drafted = pool.filter((p) => gkCountSoFar(p.id) < SHIFTS_PER_HALF);
+    const fresh = pool.filter((p) => p.wantsGoalieToday && gkCountSoFar(p.id) < keeperCap(p));
+    const drafted = pool.filter((p) => gkCountSoFar(p.id) < keeperCap(p));
     const replacement = pickKeeper(
       fresh.length ? fresh : drafted.length ? drafted : pool,
       s

@@ -41,11 +41,19 @@ priorities in a strict order: **equity > continuity > preference**.
 
    | Volunteers | Blocks |
    |---|---|
-   | 1 | a full half (or all 8, if they want it) |
+   | 0 | **four drafted keepers, 15 minutes each** |
+   | 1 | a full half, with the other half **split between two drafted keepers** (or all 60 if they want it) |
    | 2 | a half each |
    | 3 | 4 + 2 + 2 — not 3/3/2, since a 3-shift block would have to cross half time |
    | 4 | 2 + 2 + 2 + 2 |
    | 5+ | only 4 can have a turn; the rest are first in line next game, and the app says so |
+
+   **A drafted keeper never does more than 15 minutes.** Volunteering for a half
+   is one thing; being handed half a match of a job you never asked for because
+   nobody put their hand up is another. Volunteers can take a half, or the whole
+   game if they ask. Anyone drafted gets two shifts and then it is someone
+   else's turn — including mid-game, when a keeper goes home and a stand-in has
+   to be found.
 
    Order is by who has kept *least this season*, so the biggest block goes to
    whoever has done least of the chore — that is what levels the season GK
