@@ -249,7 +249,18 @@ shift that is on the pitch right now. Three gestures, one rule:
 | a position | bench player | the bench player comes on, the dragged one sits |
 
 All three normalise to the same `applySwap`, which already guaranteed no player
-can occupy two positions in one shift.
+can occupy two positions in one shift. A swap is a **local edit**: shifts
+already played are untouched and the shifts still to come are deliberately not
+re-planned, so nothing rebalances behind your back — which also means each swap
+moves one shift from one player to another. The confirmation reports the
+resulting counts ("now Ruben 6 · Owen 3 shifts") so that never happens silently.
+
+Collision detection is `pointerWithin`, **not** `closestCenter`. closestCenter
+always resolves to the nearest droppable however far the pointer is, so a drag
+released over the page header still swapped the player with whoever happened to
+be closest — there was no way to abandon a drag started by accident.
+`pointerWithin` only reports a target when the pointer is genuinely inside one,
+so letting go anywhere else puts the player back.
 
 **The press-and-hold delay is the whole trick.** Live is a long scrolling page,
 and a drag that began on contact would mean every attempt to scroll past the

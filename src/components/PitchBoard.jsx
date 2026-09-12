@@ -5,7 +5,7 @@ import {
   KeyboardSensor,
   MouseSensor,
   TouchSensor,
-  closestCenter,
+  pointerWithin,
   useDraggable,
   useDroppable,
   useSensor,
@@ -31,6 +31,14 @@ import { Card, SectionLabel, Tag } from './ui.jsx';
  * every attempt to scroll past the pitch snatched up a player instead. The
  * TouchSensor waits 220ms and tolerates 8px of movement, so a flick scrolls and
  * a deliberate hold picks up.
+ *
+ * Collision detection is `pointerWithin`, deliberately, and NOT `closestCenter`.
+ * closestCenter always resolves to the nearest droppable however far away the
+ * pointer is, which meant a drag released over the page header still swapped
+ * the player with whoever happened to be nearest — there was no way to abandon
+ * a drag you had started by accident. pointerWithin only reports a target when
+ * the pointer is genuinely inside one, so letting go anywhere else simply puts
+ * the player back.
  */
 
 const LINES = [
@@ -175,7 +183,7 @@ export default function PitchBoard({ shift, bench, nameOf, comingIn, onSwap, onC
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={pointerWithin}
       onDragStart={({ active }) => {
         setActiveId(active.id);
         buzz(18); // the hold registered — let go or drag

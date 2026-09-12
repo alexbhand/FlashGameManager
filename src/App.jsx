@@ -305,16 +305,24 @@ export default function App() {
     (positionId, playerId) => {
       const displaced = lineup?.[globalShift]?.[positionId];
       const nameOf = Object.fromEntries(roster.map((p) => [p.id, p.name]));
-      setLineup((prev) => applySwap(prev, globalShift, positionId, playerId));
+      const updated = applySwap(lineup, globalShift, positionId, playerId);
+      setLineup(updated);
+
+      // Report the resulting shift counts, not just the names. A manual swap is
+      // a local edit — the shifts still to come are deliberately left alone, so
+      // nothing rebalances afterwards and each swap quietly moves one shift from
+      // one player to another. Equal playing time is the whole promise of this
+      // app, so the moment it moves, say by how much.
+      const stats = computeGameStats(updated, present);
+      const tally = (id) => (id && stats[id] ? `${nameOf[id]} ${stats[id].total}` : null);
+      const counts = [tally(playerId), tally(displaced)].filter(Boolean).join(' · ');
       setToast({
         id: Date.now(),
-        title: 'Swapped',
-        detail: displaced
-          ? `${nameOf[playerId]} ⇄ ${nameOf[displaced]} · shift ${globalShift + 1}`
-          : `${nameOf[playerId]} on at ${positionId} · shift ${globalShift + 1}`,
+        title: displaced ? `${nameOf[playerId]} ⇄ ${nameOf[displaced]}` : `${nameOf[playerId]} on`,
+        detail: `Shift ${globalShift + 1} · now ${counts} shifts`,
       });
     },
-    [lineup, globalShift, roster, setLineup]
+    [lineup, globalShift, roster, present, setLineup]
   );
 
   const handleLineupChange = useCallback(
