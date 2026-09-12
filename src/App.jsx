@@ -32,6 +32,8 @@ import SeasonHistory from './components/SeasonHistory.jsx';
 import RosterChangeSheet from './components/RosterChangeSheet.jsx';
 import LineBalanceSheet from './components/LineBalanceSheet.jsx';
 import TabBar from './components/TabBar.jsx';
+import Toast from './components/Toast.jsx';
+import { buzz } from './lib/haptics.js';
 
 // ===========================================================================
 // CLOCK MODEL
@@ -95,6 +97,7 @@ export default function App() {
   const [warnings, setWarnings] = useState([]);
   const [rosterSheetOpen, setRosterSheetOpen] = useState(false);
   const [ratingsOpen, setRatingsOpen] = useState(false);
+  const [toast, setToast] = useState(null);
   // One tap of undo after a shift change, for the accidental press.
   const [undoPoint, setUndoPoint] = useState(null);
 
@@ -182,6 +185,21 @@ export default function App() {
         }),
         builtAt: Date.now(),
       });
+
+      // Say so. A tap that silently changes something off-screen is
+      // indistinguishable from a tap that missed — and the automatic rebuilds
+      // are the worst of it, because nothing on screen moves at all.
+      const here = rosterUsed.filter((p) => p.isPresent);
+      const keepers = here.filter((p) => p.wantsGoalieToday).length;
+      setToast({
+        id: Date.now(),
+        title: fromShift > 0 ? 'Rest of game re-planned' : reshuffle ? 'New lineup built' : 'Lineup updated',
+        detail:
+          `${here.length} playing · ` +
+          (keepers ? `${keepers} in goal` : 'no goalie picked') +
+          (fromShift > 0 ? ` · from shift ${fromShift + 1}` : ''),
+      });
+      buzz();
     },
     [
       roster,
@@ -538,6 +556,8 @@ export default function App() {
         onUndo={handleUndoAvailability}
         onClose={() => setRosterSheetOpen(false)}
       />
+
+      <Toast toast={toast} />
 
       <TabBar tab={tab} setTab={setTab} alert={subDue} />
     </div>

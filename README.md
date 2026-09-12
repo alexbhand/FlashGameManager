@@ -306,6 +306,13 @@ live match:
   leave no way out.
 - **One tap of undo** after a shift change, for 25 seconds.
 - **Every tappable control is at least 48×48px.**
+- **Every rebuild says so.** A confirmation pill and a short buzz, for the
+  explicit Regenerate and for the automatic pre-kickoff rebuilds alike — the
+  automatic ones especially, since nothing else on screen moves. The pill is
+  `fixed` and `pointer-events-none`, so it floats over the page without shifting
+  a single row or swallowing a tap. Note that **iOS Safari has no Vibration
+  API**, so on an iPhone the buzz is silently skipped and the pill does the
+  whole job.
 - **Nothing reflows under your thumb.** Roster rows are a fixed height whatever
   their state, and the lone-keeper prompt sits below the list rather than above
   it. Anything that grows or shrinks mid-list moves every row beneath it while
