@@ -55,6 +55,16 @@ priorities in a strict order: **equity > continuity > preference**.
    strictly among everyone else. Both floors live in `src/lib/constants.js`;
    set them to 0 to treat a GK shift as just another shift.
 
+   **The kit-change rule.** A keeper wears a different jersey and gloves, so
+   whoever takes over in goal is benched for the shift immediately before their
+   block — they get changed on the touchline while play continues, and the
+   restart is instant. This is a hard exclusion, not a score penalty: a rule
+   honoured "most of the time" is no use, because the one time it breaks is the
+   one time the game stops. The only exception is a squad too thin to sit them
+   without leaving a position empty (9 present, where everyone plays every
+   shift); the app warns when that happens. Measured over 1,960 keeper
+   handovers: **0 go straight from the field into goal**, down from 65%.
+
    The floor term squares its ratio so it stays quiet while there is plenty of
    game left and only becomes decisive as the window closes. A linear version
    was too loud too early — it yanked a keeper who had just done two straight

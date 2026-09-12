@@ -210,6 +210,7 @@ export function generateLineup(players, opts = {}) {
   const replanning = fromShift > 0 && Array.isArray(baseLineup);
 
   const roster = players.filter((p) => p.isPresent);
+  const byId = Object.fromEntries(roster.map((p) => [p.id, p]));
   const warnings = [];
   if (roster.length === 0) {
     return { lineup: emptyLineup(), warnings: ['No players marked present.'], targets: {}, present: [] };
@@ -386,6 +387,26 @@ export function generateLineup(players, opts = {}) {
     });
   };
 
+  /**
+   * Shifts from `s` onward where this player could actually take a FIELD slot.
+   * Three things disqualify a shift: they are not here, they are already in
+   * goal, or they are sitting out to change into the keeper kit for the shift
+   * after. That last one matters — without it the equity maths credits a
+   * second-half keeper with a chance they will never be given, quietly
+   * under-prioritising them until they run out of runway.
+   */
+  const fieldChancesFrom = (playerId, s) => {
+    const player = byId[playerId];
+    let n = 0;
+    for (let k = s; k < TOTAL_SHIFTS; k += 1) {
+      if (!isAvailableAt(player, k)) continue;
+      if (gkSlots[k] === playerId) continue; // in goal
+      if (gkSlots[k + 1] === playerId) continue; // kitting up for the next shift
+      n += 1;
+    }
+    return n;
+  };
+
   /** GK shifts this player is still owed from shift `s` onward. */
   const gkLeft = (playerId, s) => {
     let n = 0;
@@ -426,11 +447,10 @@ export function generateLineup(players, opts = {}) {
   const urgencyOf = (player, s, played) => {
     const owed = gkLeft(player.id, s);
     const needed = targets[player.id] - (played + owed);
-    let chances = 0;
-    for (let k = s; k < TOTAL_SHIFTS; k += 1) if (isAvailableAt(player, k)) chances += 1;
-    return needed / Math.max(1, chances - owed);
+    return needed / Math.max(1, fieldChancesFrom(player.id, s));
   };
 
+  const kitClashes = []; // collapsed into one warning after the loop
   const lineup = [];
 
   for (let s = 0; s < TOTAL_SHIFTS; s += 1) {
@@ -451,7 +471,33 @@ export function generateLineup(players, opts = {}) {
     if (keeperId) shift.GK = keeperId;
 
     // --- 2a. WHO plays this shift -------------------------------------------
-    const candidates = availableAt(s).filter((p) => p.id !== keeperId);
+    // KIT-CHANGE RULE. A keeper wears a different jersey and gloves, so the
+    // player taking over in goal next shift cannot be out on the field this
+    // shift — they would have to change at the touchline while everyone
+    // waits. Benching them for the shift before their block gives them time
+    // to get kitted up, so the restart is instant.
+    //
+    // This is a hard exclusion rather than a score penalty: a "mostly" honoured
+    // kit change is no use to anyone, since the one time it breaks is the one
+    // time the game stops. The only exception is a squad so thin that sitting
+    // them would leave a position empty — being a player short on the field is
+    // worse than a slow change, and the app says so.
+    const nextKeeperId = s + 1 < TOTAL_SHIFTS ? gkSlots[s + 1] : null;
+    const keeperHandover = nextKeeperId && nextKeeperId !== keeperId;
+
+    let candidates = availableAt(s).filter((p) => p.id !== keeperId);
+    if (keeperHandover) {
+      const withoutIncoming = candidates.filter((p) => p.id !== nextKeeperId);
+      if (withoutIncoming.length < candidates.length) {
+        // The incoming keeper is available this shift, so the rule bites.
+        if (withoutIncoming.length >= FIELD_POSITIONS.length) {
+          candidates = withoutIncoming;
+        } else {
+          kitClashes.push({ name: byId[nextKeeperId]?.name, shift: s + 2 });
+        }
+      }
+    }
+
     const need = Math.min(FIELD_POSITIONS.length, candidates.length);
 
     const ranked = candidates
@@ -470,10 +516,7 @@ export function generateLineup(players, opts = {}) {
         // coach expects: keep 0:00-15:00, sit 15:00-22:30, play 22:30-30:00.
         const floor = floorFor(p.id);
         if (floor > 0 && s0.fieldShifts < floor) {
-          const owed = gkLeft(p.id, s);
-          let chances = 0;
-          for (let k = s; k < TOTAL_SHIFTS; k += 1) if (isAvailableAt(p, k)) chances += 1;
-          const rate = (floor - s0.fieldShifts) / Math.max(1, chances - owed);
+          const rate = (floor - s0.fieldShifts) / Math.max(1, fieldChancesFrom(p.id, s));
           score += W.KEEPER_FLOOR * rate * rate;
         }
 
@@ -541,6 +584,14 @@ export function generateLineup(players, opts = {}) {
 
     lineup.push(shift);
     applyShift(shift, s);
+  }
+
+  if (kitClashes.length) {
+    const who = [...new Set(kitClashes.map((c) => c.name).filter(Boolean))].join(', ');
+    warnings.push(
+      `Too few players to rest ${who} before going in goal — they go straight ` +
+        `from the field into the net, so allow time to swap the jersey and gloves.`
+    );
   }
 
   return { lineup, warnings, targets, present: roster };
