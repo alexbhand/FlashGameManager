@@ -1,7 +1,8 @@
 import {
-  DEFAULT_STRENGTH,
+  BALANCE_LEVELS,
+  DEFAULT_BALANCE,
+  LEGACY_BALANCE,
   POSITION_IDS,
-  STRENGTH_LEVELS,
   TOTAL_SHIFTS,
   ROSTER_NAMES,
   createPlayer,
@@ -24,6 +25,13 @@ import { emptyLineup } from './lineup.js';
 // ===========================================================================
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/** Accepts current labels and the blunter ones an earlier build stored. */
+const readBalance = (v) => {
+  if (BALANCE_LEVELS.includes(v)) return v;
+  if (LEGACY_BALANCE[v]) return LEGACY_BALANCE[v];
+  return DEFAULT_BALANCE;
+};
 
 /** Roster: keep what is salvageable, re-add any canonical name that is gone. */
 export function validateRoster(saved) {
@@ -49,8 +57,8 @@ export function validateRoster(saved) {
             Number.isInteger(p.departShift) && p.departShift > 0 && p.departShift <= TOTAL_SHIFTS
               ? p.departShift
               : null,
-          offense: STRENGTH_LEVELS.includes(p.offense) ? p.offense : DEFAULT_STRENGTH,
-          defense: STRENGTH_LEVELS.includes(p.defense) ? p.defense : DEFAULT_STRENGTH,
+          offense: readBalance(p.offense),
+          defense: readBalance(p.defense),
         });
       });
     }

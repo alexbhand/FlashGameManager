@@ -24,7 +24,7 @@ browser's localStorage — there is no backend and nothing leaves the device.
 
 ## The four views
 
-- **Setup** — attendance, position preferences (season-long), "Wants Goalie Today?" (per game), build lineup, and **Coach's Ratings**.
+- **Setup** — attendance, position preferences (season-long), "Wants Goalie Today?" (per game), build lineup, and **Line Balance**.
 - **Live** — half clock counting up to 30:00, derived shift countdown, substitution alert, who's on / who's benched, and a next-shift preview split into three shoutable lists: **Going On** (from the bench), **Staying On** (everyone already out there, with position switchers flagged amber), and **Coming Off**. Positions are spelled out — "Center Mid", not "CM" — because the list is read aloud across a pitch.
 - **Matrix** — the full 8 × 9 grid, split into 1st/2nd half so it fits a phone. Tap any cell to swap.
 - **Season** — cumulative shifts per player, broken out by GK / D / M / F.
@@ -154,10 +154,17 @@ means they keep all 60 minutes. The app says exactly what it did, in one banner.
 ## Competitive balance
 
 Rec football, so winning is not the point — but a 9-0 drubbing is no fun either,
-and the games kids enjoy are the close ones. **Setup → Coach's Ratings** buckets
-each player High / Medium / Low at each end of the pitch, and those buckets do
-exactly one thing: stop two weaker players ending up on the same line at the
-same time.
+and the games kids enjoy are the close ones. **Setup → Line Balance** buckets
+each player **Anchor / Steady / Support** at each end of the pitch, and those
+buckets do exactly one thing: stop two Support players ending up on the same
+line at the same time — each gets an Anchor or a Steady beside them instead.
+
+The wording is load-bearing. This screen lives on a phone that gets handed to
+assistants and left face-up on a bench, so the labels describe a *role in a
+pairing* rather than a verdict on a child. "Support" means plays better with an
+Anchor beside them, which is exactly what the algorithm does with it and is true
+of every kid on some day. Read over a shoulder, none of it means anything about
+anybody. Saves from the earlier High/Medium/Low build migrate forward on read.
 
 Buckets rather than a 1-16 ranking, on purpose. Ranking sixteen kids twice is
 thirty-two fiddly drags on a phone, and it implies a precision nobody has —
@@ -182,11 +189,10 @@ solver takes over when it gives up. Eight players over eight slots is 40k
 permutations, pruned to almost nothing, and it only runs on the ~0.5% of shifts
 that need it.
 
-Everyone starts Medium, so the feature is inert until a coach deliberately marks
-someone. Ratings are season-long and live behind their own button rather than on
-the roster list: these are judgements about children, and the phone gets handed
-to assistants and left on benches. Nothing from this screen is ever rendered on
-the Live or Matrix views.
+Everyone starts Steady, so the feature is inert until a coach deliberately marks
+someone. It is season-long and lives behind its own button rather than on the
+roster list, and nothing from this screen is ever rendered on the Live, Matrix
+or Season views.
 
 ## Keeping the plan in sync with Setup
 

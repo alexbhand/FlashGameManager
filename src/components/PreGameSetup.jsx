@@ -24,7 +24,7 @@ export default function PreGameSetup({
 
   // How many players the coach has moved off the neutral default.
   const ratedCount = useMemo(
-    () => roster.filter((p) => p.offense !== 'Medium' || p.defense !== 'Medium').length,
+    () => roster.filter((p) => p.offense !== 'Steady' || p.defense !== 'Steady').length,
     [roster]
   );
 
@@ -85,7 +85,7 @@ export default function PreGameSetup({
         </div>
 
         <Button variant="outline" className="mt-3 w-full text-sm" onClick={onOpenRatings}>
-          Coach&apos;s Ratings{ratedCount > 0 ? ` · ${ratedCount} set` : ''}
+          Line Balance{ratedCount > 0 ? ` · ${ratedCount} set` : ''}
         </Button>
 
         <div className="mt-3 space-y-2">

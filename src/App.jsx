@@ -30,7 +30,7 @@ import LiveDashboard from './components/LiveDashboard.jsx';
 import MatrixView from './components/MatrixView.jsx';
 import SeasonHistory from './components/SeasonHistory.jsx';
 import RosterChangeSheet from './components/RosterChangeSheet.jsx';
-import CoachRatingsSheet from './components/CoachRatingsSheet.jsx';
+import LineBalanceSheet from './components/LineBalanceSheet.jsx';
 import TabBar from './components/TabBar.jsx';
 
 // ===========================================================================
@@ -266,7 +266,7 @@ export default function App() {
     [applyAvailability]
   );
 
-  /** Coach's line-balance buckets. Season-long, like position preferences. */
+  /** Line-balance buckets. Season-long, like position preferences. */
   const handleRate = useCallback(
     (playerId, end, level) =>
       setRoster((prev) => prev.map((p) => (p.id === playerId ? { ...p, [end]: level } : p))),
@@ -274,8 +274,8 @@ export default function App() {
   );
 
   const handleResetRatings = useCallback(() => {
-    if (!window.confirm('Set every player back to Medium at both ends?')) return;
-    setRoster((prev) => prev.map((p) => ({ ...p, offense: 'Medium', defense: 'Medium' })));
+    if (!window.confirm('Set every player back to Steady at both ends?')) return;
+    setRoster((prev) => prev.map((p) => ({ ...p, offense: 'Steady', defense: 'Steady' })));
   }, [setRoster]);
 
   const handleLineupChange = useCallback(
@@ -521,7 +521,7 @@ export default function App() {
         )}
       </main>
 
-      <CoachRatingsSheet
+      <LineBalanceSheet
         open={ratingsOpen}
         roster={roster}
         onRate={handleRate}

@@ -1,38 +1,39 @@
 import { useMemo, useState } from 'react';
-import { STRENGTH_LEVELS, DEFAULT_STRENGTH } from '../lib/constants.js';
+import { BALANCE_LEVELS, DEFAULT_BALANCE } from '../lib/constants.js';
 import { Banner, Button, Card } from './ui.jsx';
 
 /**
- * The coach's own screen. Buckets each player High / Medium / Low at each end
- * of the pitch, and the only thing those buckets do is stop two weaker players
- * ending up on the same line at the same time.
+ * Line balance. Buckets each player Anchor / Steady / Support at each end of
+ * the pitch so that no line ends up with two Support players on it at once.
  *
- * Deliberately tucked behind its own button rather than sitting on the roster
- * list: these are judgements about children, and the phone gets handed to
- * assistants and left on benches. Nothing here is ever rendered on the Live or
- * Matrix screens, which are the ones people look over your shoulder at.
+ * The wording is doing real work here. This screen lives on a phone that gets
+ * handed to assistants and left face-up on a bench, and the labels describe a
+ * role in a pairing rather than a verdict on a child: a Support player is one
+ * who plays better with an Anchor beside them, which is exactly what the
+ * algorithm uses it for and is true of every kid on some day. Read over a
+ * shoulder, none of it means anything about anybody.
  */
 
 const ENDS = [
-  { key: 'offense', label: 'Attacking', blurb: 'Used for the front line.' },
-  { key: 'defense', label: 'Defending', blurb: 'Used for the back line.' },
+  { key: 'offense', label: 'Attacking', blurb: 'Shapes the front line.' },
+  { key: 'defense', label: 'Defending', blurb: 'Shapes the back line.' },
 ];
 
 const LEVEL_STYLES = {
-  High: 'border-lime-400/70 bg-lime-400/20 text-lime-200',
-  Medium: 'border-slate-600 bg-slate-700/60 text-slate-200',
-  // Amber, not red. This is "give them help", not "bad player".
-  Low: 'border-amber-400/60 bg-amber-400/15 text-amber-200',
+  Anchor: 'border-lime-400/70 bg-lime-400/20 text-lime-200',
+  Steady: 'border-slate-600 bg-slate-700/60 text-slate-200',
+  // Sky, not red or amber — nothing on this screen should read as a warning.
+  Support: 'border-sky-400/60 bg-sky-400/15 text-sky-200',
 };
 const LEVEL_IDLE = 'border-slate-800 bg-slate-900/60 text-slate-600';
 
-export default function CoachRatingsSheet({ open, roster, onRate, onResetAll, onClose }) {
+export default function LineBalanceSheet({ open, roster, onRate, onResetAll, onClose }) {
   const [end, setEnd] = useState('offense');
 
   const counts = useMemo(() => {
-    const c = { High: 0, Medium: 0, Low: 0 };
+    const c = { Anchor: 0, Steady: 0, Support: 0 };
     roster.forEach((p) => {
-      c[p[end] || DEFAULT_STRENGTH] = (c[p[end] || DEFAULT_STRENGTH] || 0) + 1;
+      c[p[end] || DEFAULT_BALANCE] = (c[p[end] || DEFAULT_BALANCE] || 0) + 1;
     });
     return c;
   }, [roster, end]);
@@ -51,10 +52,10 @@ export default function CoachRatingsSheet({ open, roster, onRate, onResetAll, on
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xl font-black uppercase tracking-tight text-white">
-                Coach&apos;s Ratings
+                Line Balance
               </p>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Line balance only · never shown on Live or Matrix
+                Who lines up alongside whom
               </p>
             </div>
             <Button variant="outline" className="min-h-[48px] shrink-0 px-4 text-xs" onClick={onClose}>
@@ -82,20 +83,21 @@ export default function CoachRatingsSheet({ open, roster, onRate, onResetAll, on
 
         <div className="space-y-3 px-4 pt-4">
           <Banner tone="slate">
-            {active.blurb} The lineup builder uses this for one thing only: keeping two weaker
-            players off the same line at the same time. It never changes anyone&apos;s playing
-            time — everyone still gets an equal share of shifts.
+            {active.blurb} An <strong>Anchor</strong> is someone a line can be built around.{' '}
+            <strong>Support</strong> means they play better with an Anchor beside them — so the
+            builder never puts two of them on the same line at once. Playing time is untouched:
+            everyone still gets an equal share of shifts.
           </Banner>
 
           <div className="flex items-center justify-between px-1 text-[10px] font-black uppercase tracking-widest">
-            <span className="text-lime-400">{counts.High} High</span>
-            <span className="text-slate-400">{counts.Medium} Medium</span>
-            <span className="text-amber-300">{counts.Low} Low</span>
+            <span className="text-lime-400">{counts.Anchor} Anchor</span>
+            <span className="text-slate-400">{counts.Steady} Steady</span>
+            <span className="text-sky-300">{counts.Support} Support</span>
           </div>
 
           <div className="space-y-2">
             {roster.map((player) => {
-              const current = player[end] || DEFAULT_STRENGTH;
+              const current = player[end] || DEFAULT_BALANCE;
               return (
                 <Card key={player.id} className="p-2.5">
                   <div className="mb-2 flex items-baseline justify-between gap-2">
@@ -109,7 +111,7 @@ export default function CoachRatingsSheet({ open, roster, onRate, onResetAll, on
                     )}
                   </div>
                   <div className="flex gap-2">
-                    {STRENGTH_LEVELS.map((level) => {
+                    {BALANCE_LEVELS.map((level) => {
                       const on = current === level;
                       return (
                         <button
@@ -119,7 +121,7 @@ export default function CoachRatingsSheet({ open, roster, onRate, onResetAll, on
                             on ? LEVEL_STYLES[level] : LEVEL_IDLE
                           }`}
                         >
-                          {level === 'Medium' ? 'Med' : level}
+                          {level}
                         </button>
                       );
                     })}
@@ -130,12 +132,12 @@ export default function CoachRatingsSheet({ open, roster, onRate, onResetAll, on
           </div>
 
           <Button variant="outline" className="w-full text-sm" onClick={onResetAll}>
-            Reset everyone to Medium
+            Set everyone back to Steady
           </Button>
 
           <p className="px-1 pb-2 text-xs leading-relaxed text-slate-500">
-            Ratings carry over all season. Leaving everyone on Medium turns the whole feature off —
-            the builder then balances on position preferences alone.
+            This carries over all season. Leaving everyone on Steady switches the whole thing off —
+            the builder then goes on position preferences alone.
           </p>
         </div>
       </div>

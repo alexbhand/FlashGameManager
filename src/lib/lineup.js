@@ -2,7 +2,7 @@ import {
   FIELD_POSITIONS,
   FIELD_POSITION_IDS,
   LINES,
-  isWeakOnLine,
+  needsSupportOn,
   KEEPER_FIELD_FLOOR_FULL_HALF,
   KEEPER_FIELD_FLOOR_PARTIAL,
   POSITION_BY_ID,
@@ -229,9 +229,9 @@ export function allocateGoalies(volunteers, fallbackPool, opts = {}) {
 // ---------------------------------------------------------------------------
 // Rec football, so winning is not the point — but a 9-0 drubbing is not fun for
 // anyone either, and the games the kids enjoy are the close ones. The coach
-// buckets each player High/Medium/Low at each end of the pitch, and the only
-// thing those buckets do is stop two weaker players ending up on the same line
-// at the same time.
+// buckets each player Anchor/Steady/Support at each end of the pitch, and the
+// only thing those buckets do is keep two Support players off the same line at
+// the same time — each of them gets an Anchor or a Steady beside them instead.
 //
 // Crucially this runs in the WHERE stage, never the WHO stage. Balance decides
 // which shirt number a player stands behind; it has no vote on whether they
@@ -239,11 +239,11 @@ export function allocateGoalies(volunteers, fallbackPool, opts = {}) {
 // everyone else — they just do not get paired with the other weaker player on
 // the same line. Equity is untouchable.
 
-/** How many players over the limit of one weak player per line. */
+/** How many players over the limit of one Support player per line. */
 export function lineViolations(shift, byId) {
   let total = 0;
   LINES.forEach(({ group, ids }) => {
-    const weak = ids.filter((id) => shift[id] && isWeakOnLine(byId[shift[id]], group)).length;
+    const weak = ids.filter((id) => shift[id] && needsSupportOn(byId[shift[id]], group)).length;
     if (weak > 1) total += weak - 1;
   });
   return total;
@@ -740,11 +740,11 @@ export function generateLineup(players, opts = {}) {
       placed.add(pid);
     };
 
-    /** Would this put a second weak player on that line? */
+    /** Would this put a second Support player on that line? */
     const wouldStack = (pid, posId) => {
       const { group, ids } = LINES.find((l) => l.ids.includes(posId)) || {};
-      if (!group || !isWeakOnLine(byId[pid], group)) return false;
-      return ids.some((id) => shift[id] && isWeakOnLine(byId[shift[id]], group));
+      if (!group || !needsSupportOn(byId[pid], group)) return false;
+      return ids.some((id) => shift[id] && needsSupportOn(byId[shift[id]], group));
     };
 
     // First pass honours the balance rule; second pass places anyone it could
@@ -895,7 +895,7 @@ export function planSignature(players, opts = {}) {
     .map(
       (p) =>
         `${p.id}:${p.arriveShift || 0}:${p.departShift == null ? 'x' : p.departShift}:` +
-        `${p.wantsGoalieToday ? 'gk' : '-'}:${p.offense || 'Medium'}/${p.defense || 'Medium'}`
+        `${p.wantsGoalieToday ? 'gk' : '-'}:${p.offense || 'Steady'}/${p.defense || 'Steady'}`
     )
     .sort();
   return `${singleKeeperBothHalves ? 'both' : 'one'}|${parts.join(',')}`;

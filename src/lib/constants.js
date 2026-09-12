@@ -25,7 +25,7 @@ export const POSITION_BY_ID = Object.fromEntries(POSITIONS.map((p) => [p.id, p])
 /** Preference options offered on the setup screen. */
 export const PREFERENCE_GROUPS = ['Defense', 'Midfield', 'Forward'];
 
-// --- Coach's line-balance ratings ------------------------------------------
+// --- Line balance ----------------------------------------------------------
 /**
  * Three buckets, not a 1-16 ranking. Ranking sixteen kids twice is thirty-two
  * fiddly drags on a phone, and it implies a precision no one has — whether the
@@ -33,12 +33,22 @@ export const PREFERENCE_GROUPS = ['Defense', 'Midfield', 'Forward'];
  * thing a coach actually knows is "I don't want those two back there
  * together", and buckets say exactly that.
  *
- * Everyone starts Medium, so the feature does nothing at all until a coach
+ * The labels describe a ROLE IN A PAIRING, not a verdict on a child. A
+ * Support player is one who plays better alongside an Anchor — which is the
+ * only thing the algorithm does with this, and it is true of every kid on some
+ * day. That matters because this screen lives on a phone that gets handed to
+ * assistants and left face-up on a bench: read over a shoulder, "Support"
+ * tells a ten-year-old nothing about themselves.
+ *
+ * Everyone starts Steady, so the feature does nothing at all until a coach
  * deliberately marks someone.
  */
-export const STRENGTH_LEVELS = ['High', 'Medium', 'Low'];
-export const DEFAULT_STRENGTH = 'Medium';
-export const STRENGTH_VALUE = { High: 2, Medium: 1, Low: 0 };
+export const BALANCE_LEVELS = ['Anchor', 'Steady', 'Support'];
+export const DEFAULT_BALANCE = 'Steady';
+export const BALANCE_VALUE = { Anchor: 2, Steady: 1, Support: 0 };
+
+/** Older saves used blunter words; map them forward on read. */
+export const LEGACY_BALANCE = { High: 'Anchor', Medium: 'Steady', Low: 'Support' };
 
 /**
  * Which rating matters where. Defenders are judged on defending, forwards on
@@ -46,17 +56,18 @@ export const STRENGTH_VALUE = { High: 2, Medium: 1, Low: 0 };
  * one-dimensional player is most exposed, so their two ratings are averaged
  * rather than taking the flattering one.
  */
-export function strengthForLine(player, group) {
-  const off = STRENGTH_VALUE[player?.offense] ?? 1;
-  const def = STRENGTH_VALUE[player?.defense] ?? 1;
+export function balanceForLine(player, group) {
+  const off = BALANCE_VALUE[player?.offense] ?? 1;
+  const def = BALANCE_VALUE[player?.defense] ?? 1;
   if (group === 'Defense') return def;
   if (group === 'Forward') return off;
   return (off + def) / 2;
 }
 
-/** Below Medium for the demands of that line. */
-export const WEAK_THRESHOLD = 0.75;
-export const isWeakOnLine = (player, group) => strengthForLine(player, group) < WEAK_THRESHOLD;
+/** Plays better with an Anchor beside them, for the demands of that line. */
+export const SUPPORT_THRESHOLD = 0.75;
+export const needsSupportOn = (player, group) =>
+  balanceForLine(player, group) < SUPPORT_THRESHOLD;
 
 /** The three outfield lines, for balance checks. */
 export const LINES = [
@@ -107,9 +118,9 @@ export const createPlayer = (name) => ({
   isPresent: true,          // attendance toggle, reset each game day
   preferredPositions: [],   // season-long: any of Defense / Midfield / Forward
   wantsGoalieToday: false,  // daily override that drives GK allocation
-  // Season-long coach's ratings, used only to keep lines balanced.
-  offense: DEFAULT_STRENGTH,
-  defense: DEFAULT_STRENGTH,
+  // Season-long line-balance buckets. See BALANCE_LEVELS.
+  offense: DEFAULT_BALANCE,
+  defense: DEFAULT_BALANCE,
   // --- availability window, in shift indexes (0-7) ------------------------
   // Normally the whole game. A kid who turns up at half time gets
   // arriveShift: 4; one who leaves early (or picks up a knock) gets
