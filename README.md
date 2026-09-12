@@ -167,7 +167,11 @@ team every time you touch a toggle; **Regenerate** is what asks for a different
 plan.
 
 Once the clock starts this stops, and the Live tab shows a rebuild nudge
-instead. Silently re-planning mid-game would pull players off the pitch the
+instead. **A rebuild never rewrites a shift that has already been played** —
+it re-plans only from the first shift still to come, so the season stats saved
+at full time describe what actually happened on the pitch. A half that has not
+kicked off counts as still to come, which is why a player arriving at half time
+can be slotted straight into the first shift of the second half. Silently re-planning mid-game would pull players off the pitch the
 moment you touched a toggle, so from kickoff on it asks first. A deliberate
 hand-swap on the Matrix never raises the nudge — an override is not staleness.
 

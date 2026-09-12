@@ -203,8 +203,6 @@ export default function App() {
     ]
   );
 
-  const handleGenerate = useCallback(() => buildLineup(0), [buildLineup]);
-
   /**
    * Nothing has happened yet: first half, first shift, clock untouched. While
    * this holds, changing a Setup choice can safely re-plan the whole game.
@@ -217,14 +215,30 @@ export default function App() {
     !clock.running;
 
   /**
-   * The first shift we are allowed to touch. Before kickoff that is the whole
-   * game; once play has started it is the NEXT shift, because the nine players
-   * currently on the pitch stay there until the coach subs at a stoppage.
+   * The first shift we are allowed to re-plan. Shifts already played are
+   * history and must never be rewritten — the season record has to say what
+   * actually happened on the pitch, not what the latest plan wishes had.
+   *
+   * While a half is still `pregame` nobody is out there yet, so the current
+   * shift is fair game. That covers half time as well as kickoff: at the
+   * break, shift 5 has not been played, so a kid arriving at half time can
+   * still be put straight into it. Once the clock is running the nine on the
+   * pitch stay put until the coach subs at a stoppage, so we start from the
+   * next shift instead.
    */
   const replanFrom =
-    clock.status === 'pregame' && clock.half === 1 && clock.shiftInHalf === 0
-      ? 0
+    clock.status === 'pregame'
+      ? globalShift
       : Math.min(globalShift + 1, TOTAL_SHIFTS);
+
+  /**
+   * "Build" / "Regenerate" / the Live tab's rebuild nudge all come through
+   * here. Mid-game this re-plans only the shifts still to come; before
+   * kickoff `replanFrom` is 0, so it is a clean full build. Rebuilding from
+   * scratch mid-game used to rewrite the half that had already been played,
+   * which quietly falsified the season stats saved at full time.
+   */
+  const handleGenerate = useCallback(() => buildLineup(replanFrom), [buildLineup, replanFrom]);
 
   /** Apply an availability change, then re-plan the untouched shifts. */
   const applyAvailability = useCallback(
