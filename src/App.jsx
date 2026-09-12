@@ -263,6 +263,7 @@ export default function App() {
     const game = {
       id: `g-${Date.now()}`,
       date: todayISO(),
+      savedAt: Date.now(), // so same-day games are distinguishable when deleting
       opponent: settings.opponent.trim(),
       stats,
     };

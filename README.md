@@ -35,10 +35,21 @@ browser's localStorage — there is no backend and nothing leaves the device.
 priorities in a strict order: **equity > continuity > preference**.
 
 1. **Goalie first (hard constraint).** The 8 GK slots go only to players who
-   opted in today, in whole consecutive blocks: 1 keeper → a full half (or all
-   8 if you say so), 2 → a half each, 3 → 3/3/2, 4 → 2/2/2/2. Ties are broken
-   by who has kept *least this season*, so the same kid doesn't draw goalie
-   every week. Nobody opts in → the two least-used keepers are drafted and the
+   opted in today, and a keeper only ever gets one of two block shapes — a
+   **full half**, or **half of a half** — always aligned to the run of play, so
+   no block straddles half time and nobody gets a single stray shift in goal.
+
+   | Volunteers | Blocks |
+   |---|---|
+   | 1 | a full half (or all 8, if they want it) |
+   | 2 | a half each |
+   | 3 | 4 + 2 + 2 — not 3/3/2, since a 3-shift block would have to cross half time |
+   | 4 | 2 + 2 + 2 + 2 |
+   | 5+ | only 4 can have a turn; the rest are first in line next game, and the app says so |
+
+   Order is by who has kept *least this season*, so the biggest block goes to
+   whoever has done least of the chore — that is what levels the season GK
+   column out. Nobody opts in → the two least-used keepers are drafted and the
    app says so.
 
    **Keeping does not cost you your game.** Anyone who takes a turn in goal is
@@ -46,8 +57,8 @@ priorities in a strict order: **equity > continuity > preference**.
 
    | In goal | Guaranteed field shifts | Typical shape |
    |---|---|---|
-   | A full half (4) | **2**, necessarily in the other half | keep 0–30, play 2 shifts after the break |
-   | Part of a half (1–3) | **1** | keep 0:00–15:00, sit 15:00–22:30, play 22:30–30:00 |
+   | A full half | **2**, necessarily in the other half | keep 0–30, play 2 shifts after the break |
+   | Half of a half | **1** | keep 0:00–15:00, sit 15:00–22:30, play 22:30–30:00 |
 
    Keepers therefore finish with *more* total shifts than everyone else,
    deliberately: standing in the net is not the same experience as playing, so
@@ -56,14 +67,23 @@ priorities in a strict order: **equity > continuity > preference**.
    set them to 0 to treat a GK shift as just another shift.
 
    **The kit-change rule.** A keeper wears a different jersey and gloves, so
-   whoever takes over in goal is benched for the shift immediately before their
-   block — they get changed on the touchline while play continues, and the
-   restart is instant. This is a hard exclusion, not a score penalty: a rule
-   honoured "most of the time" is no use, because the one time it breaks is the
-   one time the game stops. The only exception is a squad too thin to sit them
-   without leaving a position empty (9 present, where everyone plays every
-   shift); the app warns when that happens. Measured over 1,960 keeper
-   handovers: **0 go straight from the field into goal**, down from 65%.
+   nobody makes that change live. Both sides of a handover get a bench shift:
+   the incoming keeper sits the shift *before* their block, the outgoing keeper
+   sits the shift *after*. Going in is applied first when a squad can only
+   afford one of the two, because it is the harder deadline — the new keeper
+   has to be dressed before the restart, whereas the one coming out can peel
+   the gloves off at their own pace.
+
+   These are hard exclusions, not score penalties: a rule honoured "most of the
+   time" is no use, because the one time it breaks is the one time the game
+   stops. The only exception is 9 players present, where everyone plays every
+   shift and it is arithmetically impossible; the app warns when that happens.
+
+   Measured over 1,960 keeper handovers: **0 go straight from the field into
+   goal** (was 65%) and **0 go straight from goal onto the field** (was 48%).
+   With 10 or more present, both are honoured every time. A happy side effect
+   is that a half-of-a-half keeper now rests immediately after their block in
+   **100%** of games, which is exactly the keep / sit / play rhythm you want.
 
    The floor term squares its ratio so it stays quiet while there is plenty of
    game left and only becomes decisive as the window closes. A linear version

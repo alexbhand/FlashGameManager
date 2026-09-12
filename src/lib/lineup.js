@@ -98,13 +98,21 @@ function makeRng(seed) {
   };
 }
 
-/** Split `total` into `parts` whole consecutive blocks, as evenly as possible.
- *  splitEvenly(8, 3) -> [3, 3, 2]   splitEvenly(8, 4) -> [2, 2, 2, 2] */
-function splitEvenly(total, parts) {
-  const base = Math.floor(total / parts);
-  const extra = total % parts;
-  return Array.from({ length: parts }, (_, i) => base + (i < extra ? 1 : 0));
-}
+/**
+ * The only block shapes a keeper is ever given, both aligned to the run of
+ * play: a FULL HALF, or half of a half. Nobody gets a single stray shift in
+ * goal, and no block straddles half time.
+ */
+const HALF_BLOCKS = [
+  [0, 1, 2, 3],
+  [4, 5, 6, 7],
+];
+const QUARTER_BLOCKS = [
+  [0, 1],
+  [2, 3],
+  [4, 5],
+  [6, 7],
+];
 
 // ---------------------------------------------------------------------------
 // STAGE 1 — Goalie allocation
@@ -121,8 +129,11 @@ export function allocateGoalies(volunteers, fallbackPool, opts = {}) {
   const { singleKeeperBothHalves = false, seasonGkShifts = {} } = opts;
   const slots = new Array(TOTAL_SHIFTS).fill(null);
   const warnings = [];
+  const assign = (block, id) => block.forEach((s) => { slots[s] = id; });
 
-  // Fewest season GK shifts first — spreads the keeper load across the season.
+  // Fewest season GK shifts first. Time in goal is the chore nobody queues up
+  // for, so the player who has done least of it this season is dealt the
+  // biggest block — that is what levels the season GK column out over time.
   const byLeastKept = (list) =>
     [...list].sort(
       (a, b) =>
@@ -147,40 +158,54 @@ export function allocateGoalies(volunteers, fallbackPool, opts = {}) {
 
   if (keepers.length === 0) return { slots, warnings };
 
+  // --- One keeper: a full half, or the whole game if they asked for it -----
   if (keepers.length === 1) {
     const only = keepers[0];
     if (singleKeeperBothHalves) {
-      slots.fill(only.id); // all 8 shifts
-    } else {
-      // Requirement: a lone volunteer keeps for at least one full half.
-      for (let s = 0; s < 4; s += 1) slots[s] = only.id;
-      // Second half needs someone. Prefer the least-kept other player.
-      const backup = byLeastKept(fallbackPool.filter((p) => p.id !== only.id))[0];
-      for (let s = 4; s < TOTAL_SHIFTS; s += 1) slots[s] = (backup || only).id;
-      if (backup) {
-        warnings.push(
-          `${only.name} keeps the 1st half. ${backup.name} was drafted for the 2nd — ` +
-            `use "Goalie plays both halves" on Setup if ${only.name} wants all 60.`
-        );
-      }
+      slots.fill(only.id);
+      return { slots, warnings };
+    }
+    assign(HALF_BLOCKS[0], only.id);
+    const backup = byLeastKept(fallbackPool.filter((p) => p.id !== only.id))[0];
+    assign(HALF_BLOCKS[1], (backup || only).id);
+    if (backup) {
+      warnings.push(
+        `${only.name} keeps the 1st half. ${backup.name} was drafted for the 2nd — ` +
+          `use "Goalie plays both halves" on Setup if ${only.name} wants all 60.`
+      );
     }
     return { slots, warnings };
   }
 
-  // 2+ volunteers: whole consecutive blocks, biggest blocks to the least-kept.
-  // 2 -> 4/4 (a half each) · 3 -> 3/3/2 · 4 -> 2/2/2/2 · 5 -> 2/2/2/1/1
-  const active = keepers.slice(0, TOTAL_SHIFTS);
-  if (keepers.length > TOTAL_SHIFTS) {
+  // --- Two keepers: a half each --------------------------------------------
+  if (keepers.length === 2) {
+    assign(HALF_BLOCKS[0], keepers[0].id);
+    assign(HALF_BLOCKS[1], keepers[1].id);
+    return { slots, warnings };
+  }
+
+  // --- Three: a full half for the least-kept, a quarter each for the rest ---
+  // 4 + 2 + 2 rather than 3 + 3 + 2, because a 3-shift block would have to
+  // cross half time to stay contiguous.
+  if (keepers.length === 3) {
+    assign(HALF_BLOCKS[0], keepers[0].id);
+    assign(QUARTER_BLOCKS[2], keepers[1].id);
+    assign(QUARTER_BLOCKS[3], keepers[2].id);
+    return { slots, warnings };
+  }
+
+  // --- Four or more: half of a half each, which is the floor ---------------
+  const active = keepers.slice(0, QUARTER_BLOCKS.length);
+  active.forEach((keeper, i) => assign(QUARTER_BLOCKS[i], keeper.id));
+
+  if (keepers.length > QUARTER_BLOCKS.length) {
     warnings.push(
-      `${keepers.length} players want goalie but there are only ${TOTAL_SHIFTS} shifts. ` +
-        `${keepers.slice(TOTAL_SHIFTS).map((k) => k.name).join(', ')} did not get a turn.`
+      `${keepers.length} players want goalie, but a keeper should get at least half ` +
+        `a half — so only ${QUARTER_BLOCKS.length} can have a turn today. ` +
+        `${keepers.slice(QUARTER_BLOCKS.length).map((k) => k.name).join(', ')} ` +
+        `did not get one; they are first in line next game.`
     );
   }
-  const blocks = splitEvenly(TOTAL_SHIFTS, active.length);
-  let cursor = 0;
-  active.forEach((keeper, i) => {
-    for (let n = 0; n < blocks[i]; n += 1) slots[cursor++] = keeper.id;
-  });
 
   return { slots, warnings };
 }
@@ -402,6 +427,7 @@ export function generateLineup(players, opts = {}) {
       if (!isAvailableAt(player, k)) continue;
       if (gkSlots[k] === playerId) continue; // in goal
       if (gkSlots[k + 1] === playerId) continue; // kitting up for the next shift
+      if (k > 0 && gkSlots[k - 1] === playerId) continue; // changing back out of the kit
       n += 1;
     }
     return n;
@@ -483,20 +509,25 @@ export function generateLineup(players, opts = {}) {
     // them would leave a position empty — being a player short on the field is
     // worse than a slow change, and the app says so.
     const nextKeeperId = s + 1 < TOTAL_SHIFTS ? gkSlots[s + 1] : null;
-    const keeperHandover = nextKeeperId && nextKeeperId !== keeperId;
+    const prevKeeperId = s > 0 ? gkSlots[s - 1] : null;
 
     let candidates = availableAt(s).filter((p) => p.id !== keeperId);
-    if (keeperHandover) {
-      const withoutIncoming = candidates.filter((p) => p.id !== nextKeeperId);
-      if (withoutIncoming.length < candidates.length) {
-        // The incoming keeper is available this shift, so the rule bites.
-        if (withoutIncoming.length >= FIELD_POSITIONS.length) {
-          candidates = withoutIncoming;
-        } else {
-          kitClashes.push({ name: byId[nextKeeperId]?.name, shift: s + 2 });
-        }
-      }
-    }
+
+    // Both sides of a keeper change need a bench shift. Going IN is listed
+    // first because it is the harder deadline — the new keeper has to be
+    // dressed before the restart, whereas the one coming out can peel the
+    // gloves off at their own pace. When the squad is too thin for both, the
+    // one that survives is the one that would otherwise hold up the game.
+    const kitChanges = [];
+    if (nextKeeperId && nextKeeperId !== keeperId) kitChanges.push(nextKeeperId);
+    if (prevKeeperId && prevKeeperId !== keeperId) kitChanges.push(prevKeeperId);
+
+    kitChanges.forEach((id) => {
+      const without = candidates.filter((p) => p.id !== id);
+      if (without.length === candidates.length) return; // not in the pool anyway
+      if (without.length >= FIELD_POSITIONS.length) candidates = without;
+      else kitClashes.push(byId[id]?.name);
+    });
 
     const need = Math.min(FIELD_POSITIONS.length, candidates.length);
 
@@ -587,10 +618,10 @@ export function generateLineup(players, opts = {}) {
   }
 
   if (kitClashes.length) {
-    const who = [...new Set(kitClashes.map((c) => c.name).filter(Boolean))].join(', ');
+    const who = [...new Set(kitClashes.filter(Boolean))].join(', ');
     warnings.push(
-      `Too few players to rest ${who} before going in goal — they go straight ` +
-        `from the field into the net, so allow time to swap the jersey and gloves.`
+      `Not enough players to give ${who} a bench shift either side of their turn ` +
+        `in goal — allow time at the stoppage to swap the jersey and gloves.`
     );
   }
 

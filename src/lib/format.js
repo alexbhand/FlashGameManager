@@ -18,6 +18,16 @@ export function formatCountdown(ms) {
 
 export const todayISO = () => new Date().toISOString().slice(0, 10);
 
+/** Date plus clock time — two test games saved on the same afternoon need to
+ *  be tellable apart before you can safely delete the right one. */
+export const prettyStamp = (iso, savedAt) => {
+  const date = prettyDate(iso);
+  if (!savedAt) return date;
+  const t = new Date(savedAt);
+  if (Number.isNaN(t.getTime())) return date;
+  return `${date} · ${t.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+};
+
 export const prettyDate = (iso) => {
   const d = new Date(`${iso}T12:00:00`);
   return Number.isNaN(d.getTime())

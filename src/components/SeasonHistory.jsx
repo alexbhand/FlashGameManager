@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { prettyDate } from '../lib/format.js';
+import { prettyStamp } from '../lib/format.js';
 import { Button, Card, EmptyState, SectionLabel } from './ui.jsx';
 
 const COLUMNS = [
@@ -130,23 +130,32 @@ export default function SeasonHistory({ games, roster, onDeleteGame, onClearSeas
       </Card>
 
       <div>
-        <SectionLabel>Game Log</SectionLabel>
+        <SectionLabel right="newest first">Game Log</SectionLabel>
+        <p className="mb-2 px-1 text-xs text-slate-500">
+          Delete a game to pull it back out of the totals above — handy for clearing out
+          practice runs so they don't skew the season.
+        </p>
         <div className="space-y-2">
           {[...games].reverse().map((game) => {
-            const played = Object.values(game.stats || {}).filter((s) => s.total > 0).length;
+            const values = Object.values(game.stats || {});
+            const played = values.filter((s) => s.total > 0).length;
+            const shifts = values.reduce((sum, s) => sum + s.total, 0);
             return (
               <Card key={game.id} className="flex items-center gap-3 p-3">
-                <div className="flex-1">
-                  <p className="text-base font-black uppercase tracking-tight text-white">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-base font-black uppercase tracking-tight text-white">
                     {game.opponent ? `vs ${game.opponent}` : 'Game'}
                   </p>
                   <p className="text-xs font-semibold text-slate-500">
-                    {prettyDate(game.date)} · {played} players
+                    {prettyStamp(game.date, game.savedAt)}
+                  </p>
+                  <p className="text-[11px] font-semibold text-slate-600">
+                    {played} players · {shifts} shifts
                   </p>
                 </div>
                 <Button
-                  variant="outline"
-                  className="min-h-[44px] px-3 text-xs"
+                  variant="dangerQuiet"
+                  className="min-h-[44px] shrink-0 px-3 text-xs"
                   onClick={() => onDeleteGame(game.id)}
                 >
                   Delete
