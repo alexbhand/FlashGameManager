@@ -101,35 +101,20 @@ export default function PreGameSetup({
         </div>
       </Card>
 
-      {/* --- The lone-keeper prompt ------------------------------------------- */}
-      {keepers.length === 1 && (
-        <Card className="border-fuchsia-500/40 bg-fuchsia-500/5 p-4">
-          <p className="text-sm font-semibold text-fuchsia-200">
-            Only <span className="font-black">{keepers[0].name}</span> wants goalie today. They will
-            keep the full 1st half. Both halves?
-          </p>
-          <div className="mt-3 flex gap-2">
-            <Button
-              variant={settings.singleKeeperBothHalves ? 'primary' : 'outline'}
-              className="flex-1 text-sm"
-              onClick={() => setSettings((s) => ({ ...s, singleKeeperBothHalves: true }))}
-            >
-              All 60 min
-            </Button>
-            <Button
-              variant={!settings.singleKeeperBothHalves ? 'primary' : 'outline'}
-              className="flex-1 text-sm"
-              onClick={() => setSettings((s) => ({ ...s, singleKeeperBothHalves: false }))}
-            >
-              1st half only
-            </Button>
-          </div>
-        </Card>
-      )}
-
       {/* --- Roster checklist -------------------------------------------------- */}
       <div>
-        <SectionLabel right={`${present.length} / ${roster.length}`}>Roster</SectionLabel>
+        <SectionLabel
+          right={
+            <span>
+              {present.length} / {roster.length} in ·{' '}
+              <span className={keepers.length ? 'text-fuchsia-400' : 'text-red-400'}>
+                {keepers.length} GK
+              </span>
+            </span>
+          }
+        >
+          Roster
+        </SectionLabel>
         <div className="space-y-2">
           {roster.map((player) => (
             <Card
@@ -161,13 +146,15 @@ export default function PreGameSetup({
                     {player.name}
                   </span>
                   {/* Season keeper load, so you can see who has been carrying
-                      the gloves before deciding who takes them today. */}
-                  {seasonGkShifts[player.id] > 0 && (
-                    <span className="text-[10px] font-black uppercase tracking-wider text-fuchsia-400">
-                      {seasonGkShifts[player.id]} GK shift
-                      {seasonGkShifts[player.id] === 1 ? '' : 's'} this season
-                    </span>
-                  )}
+                      the gloves before deciding who takes them today. Rendered
+                      unconditionally (blank when zero) to keep row height fixed. */}
+                  <span className="block min-h-[13px] text-[10px] font-black uppercase tracking-wider text-fuchsia-400">
+                    {seasonGkShifts[player.id] > 0
+                      ? `${seasonGkShifts[player.id]} GK shift${
+                          seasonGkShifts[player.id] === 1 ? '' : 's'
+                        } this season`
+                      : ''}
+                  </span>
                 </div>
 
                 {/* Goalie opt-in — deliberately the loudest control on the row */}
@@ -184,27 +171,29 @@ export default function PreGameSetup({
                 </button>
               </div>
 
-              {/* Preference quick-select */}
-              {player.isPresent && (
-                <div className="mt-2 flex gap-2 pl-[60px]">
-                  {PREFERENCE_GROUPS.map((group) => {
-                    const on = player.preferredPositions.includes(group);
-                    return (
-                      <button
-                        key={group}
-                        onClick={() => togglePreference(player, group)}
-                        className={`min-h-[48px] flex-1 rounded-lg border text-xs font-black uppercase tracking-wide transition-colors ${
-                          on
-                            ? 'border-lime-400/60 bg-lime-400/20 text-lime-300'
-                            : 'border-slate-700 bg-slate-800/60 text-slate-500'
-                        }`}
-                      >
-                        {group === 'Midfield' ? 'Mid' : group === 'Forward' ? 'Fwd' : 'Def'}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              {/* Preference quick-select. Always rendered, disabled when the
+                  player is out, so a row never changes height. Anything that
+                  grows or shrinks a row moves every row below it out from
+                  under the coach's thumb mid-tap. */}
+              <div className={`mt-2 flex gap-2 pl-[60px] ${player.isPresent ? '' : 'opacity-30'}`}>
+                {PREFERENCE_GROUPS.map((group) => {
+                  const on = player.preferredPositions.includes(group);
+                  return (
+                    <button
+                      key={group}
+                      onClick={() => togglePreference(player, group)}
+                      disabled={!player.isPresent}
+                      className={`min-h-[48px] flex-1 rounded-lg border text-xs font-black uppercase tracking-wide transition-colors disabled:cursor-not-allowed ${
+                        on
+                          ? 'border-lime-400/60 bg-lime-400/20 text-lime-300'
+                          : 'border-slate-700 bg-slate-800/60 text-slate-500'
+                      }`}
+                    >
+                      {group === 'Midfield' ? 'Mid' : group === 'Forward' ? 'Fwd' : 'Def'}
+                    </button>
+                  );
+                })}
+              </div>
             </Card>
           ))}
         </div>
@@ -221,6 +210,32 @@ export default function PreGameSetup({
             ))}
           </div>
         )}
+
+        {/* Lives BELOW the roster on purpose — see the note on row height. */}
+      {keepers.length === 1 && (
+        <Card className="border-fuchsia-500/40 bg-fuchsia-500/5 p-4">
+          <p className="text-sm font-semibold text-fuchsia-200">
+            Only <span className="font-black">{keepers[0].name}</span> wants goalie today. They will
+            keep the full 1st half. Both halves?
+          </p>
+          <div className="mt-3 flex gap-2">
+            <Button
+              variant={settings.singleKeeperBothHalves ? 'primary' : 'outline'}
+              className="flex-1 text-sm"
+              onClick={() => setSettings((s) => ({ ...s, singleKeeperBothHalves: true }))}
+            >
+              All 60 min
+            </Button>
+            <Button
+              variant={!settings.singleKeeperBothHalves ? 'primary' : 'outline'}
+              className="flex-1 text-sm"
+              onClick={() => setSettings((s) => ({ ...s, singleKeeperBothHalves: false }))}
+            >
+              1st half only
+            </Button>
+          </div>
+        </Card>
+      )}
 
         <Button
           variant="primary"

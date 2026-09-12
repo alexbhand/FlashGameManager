@@ -264,6 +264,10 @@ live match:
   leave no way out.
 - **One tap of undo** after a shift change, for 25 seconds.
 - **Every tappable control is at least 48×48px.**
+- **Nothing reflows under your thumb.** Roster rows are a fixed height whatever
+  their state, and the lone-keeper prompt sits below the list rather than above
+  it. Anything that grows or shrinks mid-list moves every row beneath it while
+  a finger is already on the way down.
 
 ## localStorage
 
