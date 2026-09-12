@@ -126,10 +126,17 @@ const QUARTER_BLOCKS = [
  * @returns { slots: string[8], warnings: string[] }
  */
 export function allocateGoalies(volunteers, fallbackPool, opts = {}) {
-  const { singleKeeperBothHalves = false, seasonGkShifts = {} } = opts;
+  const { singleKeeperBothHalves = false, seasonGkShifts = {}, rng = null } = opts;
   const slots = new Array(TOTAL_SHIFTS).fill(null);
   const warnings = [];
   const assign = (block, id) => block.forEach((s) => { slots[s] = id; });
+
+  // One random key per player, drawn once so repeated sorts stay consistent.
+  // In game one of a season nobody has any GK history, so every keeper ties —
+  // and a plain name tie-break meant the drafted stand-in was whoever came
+  // first alphabetically, every single time. Ari, forever.
+  const tie = {};
+  fallbackPool.forEach((p) => { tie[p.id] = rng ? rng() : 0; });
 
   // Fewest season GK shifts first. Time in goal is the chore nobody queues up
   // for, so the player who has done least of it this season is dealt the
@@ -138,6 +145,7 @@ export function allocateGoalies(volunteers, fallbackPool, opts = {}) {
     [...list].sort(
       (a, b) =>
         (seasonGkShifts[a.id] || 0) - (seasonGkShifts[b.id] || 0) ||
+        (tie[a.id] ?? 0) - (tie[b.id] ?? 0) ||
         a.name.localeCompare(b.name)
     );
 
@@ -289,7 +297,7 @@ export function generateLineup(players, opts = {}) {
     const alloc = allocateGoalies(
       roster.filter((p) => p.wantsGoalieToday && isAvailableAt(p, 0)),
       roster,
-      { singleKeeperBothHalves, seasonGkShifts }
+      { singleKeeperBothHalves, seasonGkShifts, rng }
     );
     gkSlots = alloc.slots;
     warnings.push(...alloc.warnings);
@@ -724,6 +732,31 @@ export function applySwap(lineup, shiftIndex, positionId, playerId) {
   }
   shift[positionId] = playerId;
   return next;
+}
+
+/**
+ * A fingerprint of every Setup choice that feeds lineup generation: who is
+ * here, when they arrive and leave, who wants goal, and the both-halves
+ * answer. Stored beside the lineup so the app can tell whether the plan on
+ * screen still reflects what the coach has since ticked.
+ *
+ * This exists because the old staleness check only looked at ATTENDANCE. Tick
+ * a second goalie volunteer after building and nothing registered — no nudge,
+ * no rebuild, and the original keeper pairing silently stood. Comparing the
+ * generated output instead would have been wrong the other way, flagging every
+ * deliberate manual swap on the Matrix as "out of date".
+ */
+export function planSignature(players, opts = {}) {
+  const { singleKeeperBothHalves = false } = opts;
+  const parts = players
+    .filter((p) => p.isPresent)
+    .map(
+      (p) =>
+        `${p.id}:${p.arriveShift || 0}:${p.departShift == null ? 'x' : p.departShift}:` +
+        `${p.wantsGoalieToday ? 'gk' : '-'}`
+    )
+    .sort();
+  return `${singleKeeperBothHalves ? 'both' : 'one'}|${parts.join(',')}`;
 }
 
 /** True when the saved lineup no longer matches who is actually here — a kid

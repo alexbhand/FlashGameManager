@@ -133,7 +133,8 @@ export default function LiveDashboard({
 
       {stale && (
         <Banner tone="amber">
-          Attendance changed since this lineup was built.{' '}
+          Your Setup choices changed since this lineup was built — attendance, goalie
+          picks, or arrivals.{' '}
           <button onClick={onRegenerate} className="underline underline-offset-2">
             Rebuild it
           </button>

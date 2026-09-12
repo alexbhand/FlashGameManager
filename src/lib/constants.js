@@ -81,6 +81,7 @@ export const createRoster = () => ROSTER_NAMES.map(createPlayer);
 export const STORAGE_KEYS = {
   roster: 'flash.roster.v1',
   lineup: 'flash.lineup.v1',
+  lineupMeta: 'flash.lineupMeta.v1',
   gameState: 'flash.gameState.v1',
   completedGames: 'flash.completedGames.v1',
   settings: 'flash.settings.v1',

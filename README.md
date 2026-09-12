@@ -151,6 +151,19 @@ player with the fewest season GK shifts → only as a last resort a volunteer wh
 already kept 4. Without that middle step, one kid losing their keeper partner
 means they keep all 60 minutes. The app says exactly what it did, in one banner.
 
+## Keeping the plan in sync with Setup
+
+A lineup is only rebuilt when you ask for it, so the app has to notice when
+your Setup choices have drifted away from the plan on screen. It stores a
+`planSignature` — a fingerprint of attendance, arrival/departure shifts, goalie
+ticks and the both-halves answer — alongside the lineup, and compares **inputs**
+rather than output. Change an input and the Live tab shows a rebuild nudge;
+hand-swap a cell on the Matrix and it stays quiet, because a deliberate
+override is not staleness.
+
+**Reset Game** rebuilds the lineup as well as resetting the clock, which is
+what "reset" means to a coach standing on a touchline.
+
 ## Clock synchronization
 
 One number is stored: `accumulated` ms banked for this half, plus `startedAt`,
@@ -184,6 +197,7 @@ mode throws on quota), and an optional `migrate` to heal older saved shapes.
 |---|---|
 | `flash.roster.v1` | names, attendance, preferences, goalie opt-in, availability window |
 | `flash.lineup.v1` | the 8 × 9 matrix, including manual overrides |
+| `flash.lineupMeta.v1` | fingerprint of the Setup choices that lineup was built from |
 | `flash.gameState.v1` | clock (`accumulated`/`startedAt`), half, current shift |
 | `flash.completedGames.v1` | season history |
 | `flash.settings.v1` | opponent, seed, both-halves keeper answer |

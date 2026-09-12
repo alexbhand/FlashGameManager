@@ -14,6 +14,7 @@ import {
   emptyLineup,
   generateLineup,
   isLineupStale,
+  planSignature,
   applySwap,
 } from './lib/lineup.js';
 import { todayISO } from './lib/format.js';
@@ -97,6 +98,8 @@ export default function App() {
   // --- Persisted state ------------------------------------------------------
   const [roster, setRoster] = useLocalStorage(STORAGE_KEYS.roster, createRoster, migrateRoster);
   const [lineup, setLineup] = useLocalStorage(STORAGE_KEYS.lineup, emptyLineup);
+  // What the saved lineup was actually built from — see planSignature().
+  const [lineupMeta, setLineupMeta] = useLocalStorage(STORAGE_KEYS.lineupMeta, null);
   const [games, setGames] = useLocalStorage(STORAGE_KEYS.completedGames, []);
   const [settings, setSettings] = useLocalStorage(STORAGE_KEYS.settings, INITIAL_SETTINGS);
   const [clock, setClock] = useLocalStorage(STORAGE_KEYS.gameState, INITIAL_CLOCK);
@@ -128,7 +131,22 @@ export default function App() {
     () => lineup.some((shift) => Object.values(shift).some(Boolean)),
     [lineup]
   );
-  const stale = useMemo(() => lineupReady && isLineupStale(lineup, roster), [lineup, roster, lineupReady]);
+  /**
+   * Is the plan on screen still the plan the coach's current choices imply?
+   * Compare the INPUTS, not the output: an input change (someone ticked for
+   * goal, attendance flipped) means the plan is out of date, while a
+   * deliberate manual swap on the Matrix does not. Lineups saved before this
+   * metadata existed fall back to the old attendance-only heuristic.
+   */
+  const currentSignature = useMemo(
+    () => planSignature(roster, { singleKeeperBothHalves: settings.singleKeeperBothHalves }),
+    [roster, settings.singleKeeperBothHalves]
+  );
+  const stale = useMemo(() => {
+    if (!lineupReady) return false;
+    if (lineupMeta?.signature) return lineupMeta.signature !== currentSignature;
+    return isLineupStale(lineup, roster);
+  }, [lineupReady, lineupMeta, currentSignature, lineup, roster]);
 
   /** Season GK totals feed back into generation so the same kid doesn't keep
    *  drawing goalie week after week. */
@@ -152,7 +170,8 @@ export default function App() {
     (fromShift = 0, rosterOverride = null) => {
       // Bump the seed each time so "Regenerate" genuinely reshuffles.
       const seed = (settings.seed || 1) + 1;
-      const result = generateLineup(rosterOverride || roster, {
+      const rosterUsed = rosterOverride || roster;
+      const result = generateLineup(rosterUsed, {
         seed,
         singleKeeperBothHalves: settings.singleKeeperBothHalves,
         seasonGkShifts,
@@ -162,8 +181,23 @@ export default function App() {
       setLineup(result.lineup);
       setWarnings(result.warnings);
       setSettings((s) => ({ ...s, seed }));
+      setLineupMeta({
+        signature: planSignature(rosterUsed, {
+          singleKeeperBothHalves: settings.singleKeeperBothHalves,
+        }),
+        builtAt: Date.now(),
+      });
     },
-    [roster, lineup, settings.seed, settings.singleKeeperBothHalves, seasonGkShifts, setLineup, setSettings]
+    [
+      roster,
+      lineup,
+      settings.seed,
+      settings.singleKeeperBothHalves,
+      seasonGkShifts,
+      setLineup,
+      setSettings,
+      setLineupMeta,
+    ]
   );
 
   const handleGenerate = useCallback(() => buildLineup(0), [buildLineup]);
@@ -253,9 +287,16 @@ export default function App() {
   }, [readElapsed, setClock]);
 
   const handleResetGame = useCallback(() => {
-    if (!window.confirm('Reset the clock and start this game over? The lineup is kept.')) return;
+    if (
+      !window.confirm(
+        'Reset the clock and rebuild the lineup from your current Setup choices?\n\n' +
+          'Any manual swaps you made on the Matrix will be lost.'
+      )
+    )
+      return;
     setClock(INITIAL_CLOCK);
-  }, [setClock]);
+    buildLineup(0); // re-plan, so newly ticked goalies actually take effect
+  }, [setClock, buildLineup]);
 
   // --- Season actions -------------------------------------------------------
   const handleFinishGame = useCallback(() => {
@@ -270,6 +311,7 @@ export default function App() {
     setGames((prev) => [...prev, game]);
     setClock(INITIAL_CLOCK);
     setLineup(emptyLineup());
+    setLineupMeta(null);
     setSettings((s) => ({ ...s, opponent: '' }));
     // Goalie opt-in and availability windows are per-game; clear them for next
     // week. Position preferences are season-long and deliberately untouched.
@@ -277,7 +319,17 @@ export default function App() {
       prev.map((p) => ({ ...p, wantsGoalieToday: false, arriveShift: 0, departShift: null }))
     );
     setTab('season');
-  }, [lineup, present, settings.opponent, setGames, setClock, setLineup, setSettings, setRoster]);
+  }, [
+    lineup,
+    present,
+    settings.opponent,
+    setGames,
+    setClock,
+    setLineup,
+    setLineupMeta,
+    setSettings,
+    setRoster,
+  ]);
 
   const handleDeleteGame = useCallback(
     (id) => {
