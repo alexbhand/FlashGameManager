@@ -1,0 +1,35 @@
+@import 'tailwindcss';
+
+/*
+  Athletic scoreboard base. Dark slate field, electric-green accents.
+  Everything else is Tailwind utilities in the components.
+*/
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  background-color: #020617; /* slate-950 */
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Stop the whole page from rubber-banding while a coach taps buttons on a phone. */
+  overscroll-behavior-y: none;
+}
+
+/* Scoreboard digits: fixed-width so the clock never jitters as numbers change. */
+.clock-digits {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Kill the blue tap flash on iOS so big touch targets feel native. */
+button {
+  -webkit-tap-highlight-color: transparent;
+}

@@ -1,0 +1,407 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  SHIFTS_PER_HALF,
+  SHIFT_MS,
+  STORAGE_KEYS,
+  TOTAL_SHIFTS,
+  createRoster,
+  createPlayer,
+  ROSTER_NAMES,
+  slugify,
+} from './lib/constants.js';
+import {
+  computeGameStats,
+  emptyLineup,
+  generateLineup,
+  isLineupStale,
+  applySwap,
+} from './lib/lineup.js';
+import { todayISO } from './lib/format.js';
+import { useLocalStorage } from './lib/useLocalStorage.js';
+import PreGameSetup from './components/PreGameSetup.jsx';
+import LiveDashboard from './components/LiveDashboard.jsx';
+import MatrixView from './components/MatrixView.jsx';
+import SeasonHistory from './components/SeasonHistory.jsx';
+import RosterChangeSheet from './components/RosterChangeSheet.jsx';
+import TabBar from './components/TabBar.jsx';
+
+// ===========================================================================
+// CLOCK MODEL
+// ---------------------------------------------------------------------------
+// Only ONE number is ever stored: `accumulated` (ms of the current half that
+// have already banked) plus `startedAt` (wall-clock ms of the moment the
+// current run began). Elapsed time is always derived:
+//
+//     elapsed = accumulated + (running ? Date.now() - startedAt : 0)
+//
+// Why this shape and not a setInterval that does `tick++`:
+//   * No drift. A 200ms interval that fires late (throttled background tab,
+//     phone screen off in a coat pocket) would lose real seconds. Reading the
+//     wall clock cannot.
+//   * Refresh-proof. Because startedAt is a real timestamp written to
+//     localStorage, reloading the page mid-half picks the clock right back up
+//     where it should be, not where it was when the tab died.
+//   * The shift countdown is DERIVED from the same elapsed value rather than
+//     being its own timer, so the two clocks can never disagree.
+//
+// Shift boundaries are FIXED at 7:30 / 15:00 / 22:30 / 30:00 of each half.
+// Confirming a sub advances which shift is on the field; it does NOT move the
+// remaining boundaries. So a sub made late just makes that one shift short,
+// and the schedule the whole plan was built around stays put. (An earlier
+// version re-cut the remaining shifts to absorb the overrun — it kept the
+// halves exact, but it meant no boundary was ever where you expected it.)
+// ===========================================================================
+
+const INITIAL_CLOCK = {
+  half: 1,
+  shiftInHalf: 0,    // 0..3 within the current half
+  running: false,
+  startedAt: null,   // epoch ms, or null while paused
+  accumulated: 0,    // banked ms of this half
+  status: 'pregame', // pregame | live | final
+};
+
+/** Clock reading at which shift `i` (0-based, within a half) is due to end. */
+export const shiftDueAt = (shiftInHalf) => (shiftInHalf + 1) * SHIFT_MS;
+
+const INITIAL_SETTINGS = { singleKeeperBothHalves: false, seed: 1, opponent: '' };
+
+/** Heal rosters saved by an older build (or hand-edited localStorage). */
+function migrateRoster(saved) {
+  if (!Array.isArray(saved) || saved.length === 0) return createRoster();
+  const byId = new Map(
+    saved
+      .filter((p) => p && typeof p.name === 'string')
+      .map((p) => [
+        p.id || slugify(p.name),
+        {
+          id: p.id || slugify(p.name),
+          name: p.name,
+          isPresent: p.isPresent !== false,
+          preferredPositions: Array.isArray(p.preferredPositions) ? p.preferredPositions : [],
+          wantsGoalieToday: p.wantsGoalieToday === true,
+          arriveShift: Number.isInteger(p.arriveShift) ? p.arriveShift : 0,
+          departShift: Number.isInteger(p.departShift) ? p.departShift : null,
+        },
+      ])
+  );
+  // Make sure every name from the canonical roster exists exactly once.
+  ROSTER_NAMES.forEach((name) => {
+    const id = slugify(name);
+    if (!byId.has(id)) byId.set(id, createPlayer(name));
+  });
+  return [...byId.values()];
+}
+
+export default function App() {
+  // --- Persisted state ------------------------------------------------------
+  const [roster, setRoster] = useLocalStorage(STORAGE_KEYS.roster, createRoster, migrateRoster);
+  const [lineup, setLineup] = useLocalStorage(STORAGE_KEYS.lineup, emptyLineup);
+  const [games, setGames] = useLocalStorage(STORAGE_KEYS.completedGames, []);
+  const [settings, setSettings] = useLocalStorage(STORAGE_KEYS.settings, INITIAL_SETTINGS);
+  const [clock, setClock] = useLocalStorage(STORAGE_KEYS.gameState, INITIAL_CLOCK);
+
+  // --- Ephemeral state ------------------------------------------------------
+  const [tab, setTab] = useState('setup');
+  const [warnings, setWarnings] = useState([]);
+  const [rosterSheetOpen, setRosterSheetOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Re-render 4x/second only while the clock is actually running.
+  useEffect(() => {
+    if (!clock.running) return undefined;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [clock.running]);
+
+  /** Single source of truth for "how far into this half are we". */
+  const elapsed = clock.accumulated + (clock.running && clock.startedAt ? now - clock.startedAt : 0);
+  const readElapsed = useCallback(
+    () => clock.accumulated + (clock.running && clock.startedAt ? Date.now() - clock.startedAt : 0),
+    [clock]
+  );
+
+  const present = useMemo(() => roster.filter((p) => p.isPresent), [roster]);
+  const globalShift = (clock.half - 1) * SHIFTS_PER_HALF + clock.shiftInHalf;
+  const lineupReady = useMemo(
+    () => lineup.some((shift) => Object.values(shift).some(Boolean)),
+    [lineup]
+  );
+  const stale = useMemo(() => lineupReady && isLineupStale(lineup, roster), [lineup, roster, lineupReady]);
+
+  /** Season GK totals feed back into generation so the same kid doesn't keep
+   *  drawing goalie week after week. */
+  const seasonGkShifts = useMemo(() => {
+    const acc = {};
+    games.forEach((g) =>
+      Object.values(g.stats || {}).forEach((s) => {
+        acc[s.id] = (acc[s.id] || 0) + s.GK;
+      })
+    );
+    return acc;
+  }, [games]);
+
+  // --- Lineup actions -------------------------------------------------------
+  /**
+   * Build the plan. `fromShift > 0` re-plans only the tail of the game, so
+   * shifts already played stay exactly as they were — that is what makes
+   * mid-game roster changes safe.
+   */
+  const buildLineup = useCallback(
+    (fromShift = 0, rosterOverride = null) => {
+      // Bump the seed each time so "Regenerate" genuinely reshuffles.
+      const seed = (settings.seed || 1) + 1;
+      const result = generateLineup(rosterOverride || roster, {
+        seed,
+        singleKeeperBothHalves: settings.singleKeeperBothHalves,
+        seasonGkShifts,
+        fromShift,
+        baseLineup: fromShift > 0 ? lineup : null,
+      });
+      setLineup(result.lineup);
+      setWarnings(result.warnings);
+      setSettings((s) => ({ ...s, seed }));
+    },
+    [roster, lineup, settings.seed, settings.singleKeeperBothHalves, seasonGkShifts, setLineup, setSettings]
+  );
+
+  const handleGenerate = useCallback(() => buildLineup(0), [buildLineup]);
+
+  /**
+   * The first shift we are allowed to touch. Before kickoff that is the whole
+   * game; once play has started it is the NEXT shift, because the nine players
+   * currently on the pitch stay there until the coach subs at a stoppage.
+   */
+  const replanFrom =
+    clock.status === 'pregame' && clock.half === 1 && clock.shiftInHalf === 0
+      ? 0
+      : Math.min(globalShift + 1, TOTAL_SHIFTS);
+
+  /** Apply an availability change, then re-plan the untouched shifts. */
+  const applyAvailability = useCallback(
+    (playerId, patch) => {
+      const next = roster.map((p) => (p.id === playerId ? { ...p, ...patch } : p));
+      setRoster(next);
+      if (replanFrom < TOTAL_SHIFTS) buildLineup(replanFrom, next);
+    },
+    [roster, replanFrom, setRoster, buildLineup]
+  );
+
+  const handleArrive = useCallback(
+    (playerId) =>
+      applyAvailability(playerId, {
+        isPresent: true,
+        arriveShift: replanFrom,
+        departShift: null,
+      }),
+    [applyAvailability, replanFrom]
+  );
+
+  const handleDepart = useCallback(
+    (playerId) =>
+      applyAvailability(playerId, {
+        // They keep every shift already played; they are out from here on.
+        departShift: replanFrom,
+      }),
+    [applyAvailability, replanFrom]
+  );
+
+  const handleUndoAvailability = useCallback(
+    (playerId) => applyAvailability(playerId, { arriveShift: 0, departShift: null }),
+    [applyAvailability]
+  );
+
+  const handleLineupChange = useCallback(
+    (shiftIndex, positionId, playerId) =>
+      setLineup((prev) => applySwap(prev, shiftIndex, positionId, playerId)),
+    [setLineup]
+  );
+
+  // --- Clock actions --------------------------------------------------------
+  const handleStart = useCallback(() => {
+    setNow(Date.now());
+    setClock((c) => ({ ...c, running: true, startedAt: Date.now(), status: 'live' }));
+  }, [setClock]);
+
+  const handlePause = useCallback(() => {
+    setClock((c) =>
+      c.running
+        ? { ...c, running: false, accumulated: c.accumulated + (Date.now() - c.startedAt), startedAt: null }
+        : c
+    );
+  }, [setClock]);
+
+  /**
+   * Confirmed at the whistle, not when the countdown hits zero — subs only
+   * happen at a stoppage. This just moves the next shift onto the field; the
+   * remaining 7:30 boundaries are fixed and do not shift to absorb the
+   * overrun, so the next sub is still due when the plan says it is.
+   */
+  const handleCompleteShiftChange = useCallback(() => {
+    setClock((c) =>
+      c.shiftInHalf + 1 >= SHIFTS_PER_HALF ? c : { ...c, shiftInHalf: c.shiftInHalf + 1 }
+    );
+  }, [setClock]);
+
+  const handleEndHalf = useCallback(() => {
+    setClock((c) =>
+      c.half === 1
+        ? { ...INITIAL_CLOCK, half: 2, status: 'pregame' } // fresh 30:00 for the 2nd half
+        : { ...c, running: false, accumulated: readElapsed(), startedAt: null, status: 'final' }
+    );
+  }, [readElapsed, setClock]);
+
+  const handleResetGame = useCallback(() => {
+    if (!window.confirm('Reset the clock and start this game over? The lineup is kept.')) return;
+    setClock(INITIAL_CLOCK);
+  }, [setClock]);
+
+  // --- Season actions -------------------------------------------------------
+  const handleFinishGame = useCallback(() => {
+    const stats = computeGameStats(lineup, present);
+    const game = {
+      id: `g-${Date.now()}`,
+      date: todayISO(),
+      opponent: settings.opponent.trim(),
+      stats,
+    };
+    setGames((prev) => [...prev, game]);
+    setClock(INITIAL_CLOCK);
+    setLineup(emptyLineup());
+    setSettings((s) => ({ ...s, opponent: '' }));
+    // Goalie opt-in and availability windows are per-game; clear them for next
+    // week. Position preferences are season-long and deliberately untouched.
+    setRoster((prev) =>
+      prev.map((p) => ({ ...p, wantsGoalieToday: false, arriveShift: 0, departShift: null }))
+    );
+    setTab('season');
+  }, [lineup, present, settings.opponent, setGames, setClock, setLineup, setSettings, setRoster]);
+
+  const handleDeleteGame = useCallback(
+    (id) => {
+      if (!window.confirm('Delete this game from the season log?')) return;
+      setGames((prev) => prev.filter((g) => g.id !== id));
+    },
+    [setGames]
+  );
+
+  const handleClearSeason = useCallback(() => {
+    if (!window.confirm('Erase every logged game? This cannot be undone.')) return;
+    setGames([]);
+  }, [setGames]);
+
+  // Sub-due flag drives the badge on the Live tab from anywhere in the app.
+  const subDue = clock.status === 'live' && elapsed >= shiftDueAt(clock.shiftInHalf);
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      {/* --- Header ---------------------------------------------------------- */}
+      <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black uppercase italic tracking-tighter text-lime-400">
+              Flash
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">
+              Game Day
+            </span>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+              {present.length} present
+            </div>
+            {settings.opponent && (
+              <div className="text-xs font-bold uppercase tracking-tight text-slate-300">
+                vs {settings.opponent}
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* --- Views ----------------------------------------------------------- */}
+      <main className="mx-auto max-w-3xl px-3 pb-28 pt-4">
+        {tab === 'setup' && (
+          <PreGameSetup
+            roster={roster}
+            setRoster={setRoster}
+            settings={settings}
+            setSettings={setSettings}
+            onGenerate={handleGenerate}
+            warnings={warnings}
+            lineupReady={lineupReady}
+            onGoLive={() => setTab('live')}
+            seasonGkShifts={seasonGkShifts}
+          />
+        )}
+
+        {tab === 'live' &&
+          (lineupReady ? (
+            <LiveDashboard
+              roster={roster}
+              lineup={lineup}
+              clock={clock}
+              elapsed={elapsed}
+              onStart={handleStart}
+              onPause={handlePause}
+              onCompleteShiftChange={handleCompleteShiftChange}
+              onEndHalf={handleEndHalf}
+              onFinishGame={handleFinishGame}
+              onResetGame={handleResetGame}
+              stale={stale}
+              onRegenerate={handleGenerate}
+              onOpenMatrix={() => setTab('matrix')}
+              onOpenRosterChange={() => setRosterSheetOpen(true)}
+              warnings={warnings}
+            />
+          ) : (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-8 text-center">
+              <p className="text-lg font-black uppercase tracking-wide text-slate-300">
+                No lineup yet
+              </p>
+              <p className="mt-2 text-sm text-slate-500">
+                Mark who is here on the Setup tab, then build the lineup.
+              </p>
+              <button
+                onClick={() => setTab('setup')}
+                className="mt-5 min-h-[52px] w-full rounded-xl bg-lime-400 px-5 font-black uppercase tracking-wide text-slate-950"
+              >
+                Go to Setup
+              </button>
+            </div>
+          ))}
+
+        {tab === 'matrix' && (
+          <MatrixView
+            roster={roster}
+            lineup={lineup}
+            onLineupChange={handleLineupChange}
+            liveShiftIndex={clock.status === 'pregame' && clock.half === 1 ? -1 : globalShift}
+          />
+        )}
+
+        {tab === 'season' && (
+          <SeasonHistory
+            games={games}
+            roster={roster}
+            onDeleteGame={handleDeleteGame}
+            onClearSeason={handleClearSeason}
+          />
+        )}
+      </main>
+
+      <RosterChangeSheet
+        open={rosterSheetOpen}
+        roster={roster}
+        fromShift={replanFrom}
+        onArrive={handleArrive}
+        onDepart={handleDepart}
+        onUndo={handleUndoAvailability}
+        onClose={() => setRosterSheetOpen(false)}
+      />
+
+      <TabBar tab={tab} setTab={setTab} alert={subDue} />
+    </div>
+  );
+}

@@ -1,0 +1,175 @@
+# FLASH — Game Day Manager
+
+Mobile-first game-day tool for a 9v9 youth rec soccer team. Equal playing time,
+daily goalie opt-in, live dual clocks, manual overrides, season-long history.
+
+```bash
+git clone https://github.com/alexbhand/FlashGameManager.git
+cd FlashGameManager
+npm install
+npm run dev
+```
+
+Vite serves it at <http://localhost:5173>. Everything is stored in the
+browser's localStorage — there is no backend and nothing leaves the device.
+
+## Game shape
+
+| | |
+|---|---|
+| Field | 9 players — GK, L/C/R D, L/C/R Mid, L/R Fwd |
+| Halves | 2 × 30 minutes |
+| Shifts | 7:30 each → 4 per half, 8 per game |
+| Slots | 8 shifts × 9 positions = 72 |
+
+## The four views
+
+- **Setup** — attendance, position preferences (season-long), "Wants Goalie Today?" (per game), build lineup.
+- **Live** — half clock counting up to 30:00, derived shift countdown, substitution alert, who's on / who's benched, next-shift preview.
+- **Matrix** — the full 8 × 9 grid, split into 1st/2nd half so it fits a phone. Tap any cell to swap.
+- **Season** — cumulative shifts per player, broken out by GK / D / M / F.
+
+## How fair play is enforced
+
+`src/lib/lineup.js` builds the matrix in two stages and ranks by three
+priorities in a strict order: **equity > continuity > preference**.
+
+1. **Goalie first (hard constraint).** The 8 GK slots go only to players who
+   opted in today, in whole consecutive blocks: 1 keeper → a full half (or all
+   8 if you say so), 2 → a half each, 3 → 3/3/2, 4 → 2/2/2/2. Ties are broken
+   by who has kept *least this season*, so the same kid doesn't draw goalie
+   every week. Nobody opts in → the two least-used keepers are drafted and the
+   app says so.
+
+   **Keeping does not cost you your game.** Anyone who takes a turn in goal is
+   guaranteed out-field shifts, scaled to how much of a half they kept:
+
+   | In goal | Guaranteed field shifts | Typical shape |
+   |---|---|---|
+   | A full half (4) | **2**, necessarily in the other half | keep 0–30, play 2 shifts after the break |
+   | Part of a half (1–3) | **1** | keep 0:00–15:00, sit 15:00–22:30, play 22:30–30:00 |
+
+   Keepers therefore finish with *more* total shifts than everyone else,
+   deliberately: standing in the net is not the same experience as playing, so
+   it is not allowed to quietly eat a kid's afternoon. Equity is enforced
+   strictly among everyone else. Both floors live in `src/lib/constants.js`;
+   set them to 0 to treat a GK shift as just another shift.
+
+   The floor term squares its ratio so it stays quiet while there is plenty of
+   game left and only becomes decisive as the window closes. A linear version
+   was too loud too early — it yanked a keeper who had just done two straight
+   shifts in net right back on, instead of letting them breathe.
+2. **Field, shift by shift.** Each shift picks who plays, then where:
+   - *Equity* is the dominant term, and it is a **rate, not a count**. Ranking
+     by "shifts played (plus GK shifts still owed)" compares a keeper's nearly
+     final total against everyone else's partial total — a player keeping the
+     2nd half looks like they already have 4 shifts at kickoff, so they sit the
+     whole 1st half and finish the game far behind. Instead each player gets an
+     *urgency*: `needed / opportunities`, where `needed` is their fair share
+     minus what they are already guaranteed, and `opportunities` is the shifts
+     left in which they could take a field slot. The 2nd-half keeper needs 3.2
+     from 4 open shifts (0.80); a field player needs 7.2 from 8 (0.90).
+     Comparable numbers, so they interleave and land on the same total.
+   - *No back-to-back sits* pushes on the player who sat the **last** shift,
+     sized to beat continuity and break ties but to lose to a genuine one-shift
+     equity gap.
+   - *Continuity* keeps a player in the exact same position for up to 2
+     straight shifts, then rotates them.
+   - *Preference* places players in their chosen line, with a mild variety term.
+
+Measured across every roster size from 9 to 16 and 1–4 goalie volunteers, 60–80
+seeds each:
+
+- **Spread among non-keepers is always ≤ 1 shift** — the mathematical optimum,
+  and exactly 0 where 72/players divides evenly (12 present → everybody 6).
+- **Every keeper clears its scaled field-time floor**: 4,620 keepers checked
+  across 1,680 games, 0 misses. Of the 1,680 who kept a *full half*, **not one**
+  failed to get 2+ field shifts in the other half. Keepers on a 2-shift block
+  get a rest immediately after it ~60% of the time — a preference, not a rule,
+  since equity sometimes says they should stay on.
+- **No duplicate players** within a shift across all 1,680 generated games.
+- Keepers average ~6.1 total shifts vs ~5.4 for everyone else — the intended
+  trade-off, visible in the Season table's GK column.
+- Position continuity 79–100%, preference match ~78%, and over 200 games every
+  back-to-back bench sit belongs to a player already ahead on projected load,
+  i.e. **none are avoidable**.
+
+## Late arrivals and early exits
+
+Kids turn up at half time and go home with a sore ankle. **Live → Someone
+Arrived / Left** records it and re-plans only the shifts that have *not* been
+played; everything already on the pitch is left alone, and the nine currently
+out there finish their shift.
+
+The mechanism is one line of the equity model. Instead of a single team-wide
+fair share, each player's target is weighted by the shifts they are actually
+available for:
+
+```
+target[p] = Σ over shifts p is available of (9 / players available that shift)
+```
+
+So a kid arriving at half time is owed a normal share of the four shifts that
+are **left** — about 2 — not a full game crammed into the second half. No
+catch-up, which is the point. Players who leave drop out of the denominator the
+moment they go, and the rest absorb those slots evenly. Because the target
+feeds the same urgency metric, none of this needed special-casing.
+
+If the departing player was the keeper, the GK plan is repaired in preference
+order: a volunteer who has not already done a full half → a drafted outfield
+player with the fewest season GK shifts → only as a last resort a volunteer who
+already kept 4. Without that middle step, one kid losing their keeper partner
+means they keep all 60 minutes. The app says exactly what it did, in one banner.
+
+## Clock synchronization
+
+One number is stored: `accumulated` ms banked for this half, plus `startedAt`,
+a real wall-clock timestamp. Elapsed is always derived:
+
+```js
+elapsed = accumulated + (running ? Date.now() - startedAt : 0)
+```
+
+No drift when a background tab is throttled or the phone screen sleeps, and a
+mid-half refresh resumes at the correct time. **The shift countdown is derived
+from the same value rather than being its own timer**, so the two can never
+disagree.
+
+**Shift boundaries are fixed** at 7:30 / 15:00 / 22:30 / 30:00 of each half.
+Subs happen at stoppages, so the half clock never stops for the shift timer:
+the countdown just goes negative (`+0:44`) under a substitution alert naming
+who to send on. Confirming **Shift Change Complete** moves the next shift onto
+the field but does *not* push the remaining boundaries back — a sub made 44s
+late simply makes that one shift 44s short, and the next one is still due at
+15:00, where the plan says it is. Some shifts therefore run a little long or
+short, which evens out across a season and keeps every boundary predictable.
+
+## localStorage
+
+`src/lib/useLocalStorage.js` — a `useState` drop-in that mirrors to
+localStorage. Lazy initial read, writes wrapped in `try/catch` (Safari private
+mode throws on quota), and an optional `migrate` to heal older saved shapes.
+
+| Key | Holds |
+|---|---|
+| `flash.roster.v1` | names, attendance, preferences, goalie opt-in, availability window |
+| `flash.lineup.v1` | the 8 × 9 matrix, including manual overrides |
+| `flash.gameState.v1` | clock (`accumulated`/`startedAt`), half, current shift |
+| `flash.completedGames.v1` | season history |
+| `flash.settings.v1` | opponent, seed, both-halves keeper answer |
+
+Saving a finished game clears the clock and lineup and resets the per-game
+fields — `wantsGoalieToday` plus the `arriveShift` / `departShift` availability
+window. **`preferredPositions` is never cleared** — it is season-long, so last
+week's picks are already selected when you open Setup next Saturday and you
+just toggle what changed.
+
+The Setup screen also shows each player's **season GK shifts** under their
+name, with a summary line on the Today card, so you can see who has been
+carrying the gloves before deciding who takes them today.
+
+## Stack
+
+Vite 6 · React 18 · Tailwind CSS v4 (via `@tailwindcss/vite`; no config file —
+theme comes from `src/index.css`). Only standard hooks: `useState`,
+`useEffect`, `useMemo`, `useCallback`.
