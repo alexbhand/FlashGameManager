@@ -439,6 +439,14 @@ export function generateLineup(players, opts = {}) {
     warnings.push(...alloc.warnings);
   }
 
+  /**
+   * A keeper change into this shift straddles half time, so there is already a
+   * five-minute break to pull a different jersey on. Benching someone for the
+   * kit change here buys nothing and costs them a shift — and it was the sole
+   * cause of every back-to-back bench sit measured across 450 games.
+   */
+  const handoverAtHalfTime = (s) => s === SHIFTS_PER_HALF;
+
   const gkRepairs = {}; // collapsed into one warning per change, after the loop
   const gkCountSoFar = (id) => gkSlots.reduce((n, x) => n + (x === id ? 1 : 0), 0);
   const pickKeeper = (pool, s) => {
@@ -567,8 +575,10 @@ export function generateLineup(players, opts = {}) {
     for (let k = s; k < TOTAL_SHIFTS; k += 1) {
       if (!isAvailableAt(player, k)) continue;
       if (gkSlots[k] === playerId) continue; // in goal
-      if (gkSlots[k + 1] === playerId) continue; // kitting up for the next shift
-      if (k > 0 && gkSlots[k - 1] === playerId) continue; // changing back out of the kit
+      // Kitting up / changing back out, except across half time when the
+      // interval covers it.
+      if (gkSlots[k + 1] === playerId && !handoverAtHalfTime(k + 1)) continue;
+      if (k > 0 && gkSlots[k - 1] === playerId && !handoverAtHalfTime(k)) continue;
       n += 1;
     }
     return n;
@@ -660,10 +670,22 @@ export function generateLineup(players, opts = {}) {
     // gloves off at their own pace. When the squad is too thin for both, the
     // one that survives is the one that would otherwise hold up the game.
     const kitChanges = [];
-    if (nextKeeperId && nextKeeperId !== keeperId) kitChanges.push(nextKeeperId);
-    if (prevKeeperId && prevKeeperId !== keeperId) kitChanges.push(prevKeeperId);
+    if (nextKeeperId && nextKeeperId !== keeperId && !handoverAtHalfTime(s + 1)) {
+      kitChanges.push(nextKeeperId);
+    }
+    if (prevKeeperId && prevKeeperId !== keeperId && !handoverAtHalfTime(s)) {
+      kitChanges.push(prevKeeperId);
+    }
 
     kitChanges.forEach((id) => {
+      // Never buy a kit change with a second consecutive bench shift. Sitting
+      // fifteen minutes straight is a worse outcome for a child than a slightly
+      // slower restart, so the rest rule wins and the swap happens at the
+      // touchline instead.
+      if (st[id] && st[id].benchStreak >= 1) {
+        kitClashes.push(byId[id]?.name);
+        return;
+      }
       const without = candidates.filter((p) => p.id !== id);
       if (without.length === candidates.length) return; // not in the pool anyway
       if (without.length >= FIELD_POSITIONS.length) candidates = without;
@@ -704,7 +726,20 @@ export function generateLineup(players, opts = {}) {
       })
       .sort((a, b) => b.score - a.score);
 
-    const onField = ranked.slice(0, need).map((r) => r.player);
+    /**
+     * NOBODY SITS TWICE RUNNING — a constraint, not a preference.
+     *
+     * Fifteen minutes on a bench is most of a half for a ten-year-old, and it
+     * is never necessary: N - 9 players sit each shift and there are 8 outfield
+     * slots waiting, so every one of them fits back on as long as the squad is
+     * 17 or fewer. Anyone who sat the last shift therefore gets first claim on
+     * this one, ahead of the equity ordering. Equity then decides among the
+     * players who are left, which is where it belongs — it settles who is
+     * rested next, not who is rested twice over.
+     */
+    const satLastShift = ranked.filter((x) => st[x.player.id].benchStreak >= 1);
+    const restedRecently = ranked.filter((x) => st[x.player.id].benchStreak < 1);
+    const onField = [...satLastShift, ...restedRecently].slice(0, need).map((r) => r.player);
 
     // --- 2b. WHERE they play -------------------------------------------------
     const open = new Set(FIELD_POSITIONS.map((p) => p.id));
@@ -776,8 +811,9 @@ export function generateLineup(players, opts = {}) {
   if (kitClashes.length) {
     const who = [...new Set(kitClashes.filter(Boolean))].join(', ');
     warnings.push(
-      `Not enough players to give ${who} a bench shift either side of their turn ` +
-        `in goal — allow time at the stoppage to swap the jersey and gloves.`
+      `${who} goes almost straight between the field and goal — a rest shift there ` +
+        `would have meant sitting twice running, so allow a moment at the stoppage ` +
+        `to swap the jersey and gloves.`
     );
   }
 

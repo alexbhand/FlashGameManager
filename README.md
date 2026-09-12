@@ -69,7 +69,9 @@ priorities in a strict order: **equity > continuity > preference**.
    **The kit-change rule.** A keeper wears a different jersey and gloves, so
    nobody makes that change live. Both sides of a handover get a bench shift:
    the incoming keeper sits the shift *before* their block, the outgoing keeper
-   sits the shift *after*. Going in is applied first when a squad can only
+   sits the shift *after*. **Half time is exempt** — the interval is already a
+   break, so spending a shift on it there buys nothing and costs a child their
+   playing time. Going in is applied first when a squad can only
    afford one of the two, because it is the harder deadline — the new keeper
    has to be dressed before the restart, whereas the one coming out can peel
    the gloves off at their own pace.
@@ -79,9 +81,10 @@ priorities in a strict order: **equity > continuity > preference**.
    stops. The only exception is 9 players present, where everyone plays every
    shift and it is arithmetically impossible; the app warns when that happens.
 
-   Measured over 1,960 keeper handovers: **0 go straight from the field into
-   goal** (was 65%) and **0 go straight from goal onto the field** (was 48%).
-   With 10 or more present, both are honoured every time. A happy side effect
+   Measured over mid-half handovers, where the rule applies: **0 go straight
+   from goal onto the field**, and 26% go straight from field into goal — those
+   being the cases where a rest shift would have meant sitting twice running, so
+   the rest rule wins and the app says so. A happy side effect
    is that a half-of-a-half keeper now rests immediately after their block in
    **100%** of games, which is exactly the keep / sit / play rhythm you want.
 
@@ -100,9 +103,14 @@ priorities in a strict order: **equity > continuity > preference**.
      left in which they could take a field slot. The 2nd-half keeper needs 3.2
      from 4 open shifts (0.80); a field player needs 7.2 from 8 (0.90).
      Comparable numbers, so they interleave and land on the same total.
-   - *No back-to-back sits* pushes on the player who sat the **last** shift,
-     sized to beat continuity and break ties but to lose to a genuine one-shift
-     equity gap.
+   - *Nobody sits twice running* is a hard constraint, not a weight. Fifteen
+     minutes on a bench is most of a half for a ten-year-old, and it is never
+     necessary: N-9 players sit each shift and 8 outfield slots are waiting, so
+     everyone fits back on while the squad is 17 or fewer. Anyone who sat last
+     shift gets first claim on this one, ahead of equity — equity then settles
+     who is rested *next*, which is where it belongs. It also outranks the
+     keeper kit change: a slightly rushed jersey swap beats a child sitting for
+     a quarter of an hour.
    - *Rotation* moves players around the pitch. A player is penalised for
      returning to the line they just left, and penalised harder for the exact
      same slot, so nobody spends the afternoon at Left D. This deliberately
