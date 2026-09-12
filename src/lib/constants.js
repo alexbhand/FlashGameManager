@@ -111,6 +111,22 @@ export const KEEPER_FIELD_FLOOR_FULL_HALF = 2;
  * of a job they did not want.
  */
 export const DRAFTED_KEEPER_MAX_SHIFTS = 2;
+
+/**
+ * How many of a volunteer keeper's outfield shifts are shielded from being
+ * spent at the back. Standing in goal is already the defensive, unglamorous
+ * job; putting the kid who volunteered for it straight into the back line for
+ * the rest of their game is a poor thank-you, and a poor advert for
+ * volunteering next week.
+ *
+ * The shield lapses after this many field shifts, which is what makes the
+ * behaviour match a coach's instinct: a keeper with only two outfield shifts
+ * should almost never spend one at the back, while one with three or more can
+ * reasonably take a turn there like anybody else. It never applies to a player
+ * who actually likes defending — if Defense is on their preference list they
+ * are treated normally.
+ */
+export const KEEPER_SHIELDED_FIELD_SHIFTS = 2;
 export const KEEPER_FIELD_FLOOR_PARTIAL = 1;
 
 export const ROSTER_NAMES = [

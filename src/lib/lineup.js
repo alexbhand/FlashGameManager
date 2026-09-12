@@ -4,6 +4,7 @@ import {
   LINES,
   needsSupportOn,
   DRAFTED_KEEPER_MAX_SHIFTS,
+  KEEPER_SHIELDED_FIELD_SHIFTS,
   KEEPER_FIELD_FLOOR_FULL_HALF,
   KEEPER_FIELD_FLOOR_PARTIAL,
   POSITION_BY_ID,
@@ -104,6 +105,15 @@ const W = {
   LINE_REPEAT: -200,      // same line (D / Mid / Fwd) as their last shift
   EXACT_REPEAT: -140,     // ...and the very same slot, on top of that
   GROUP_REPEAT: -35,      // cumulative: spread each player across all three lines
+  /**
+   * The thank-you for volunteering in goal: their first couple of outfield
+   * shifts steer away from the back line, so a half spent keeping is not
+   * followed by a half spent defending. Sized above LINE_REPEAT so that a
+   * second shift in their preferred line still beats a trip to the back, but
+   * left as a penalty rather than a ban — if the back line is genuinely where
+   * the only gap is, they fill it rather than leave it open.
+   */
+  KEEPER_NOT_DEFENCE: -260,
 };
 
 /** Deterministic PRNG (mulberry32) so a given seed always yields the same
@@ -768,6 +778,18 @@ export function generateLineup(players, opts = {}) {
     const onField = [...satLastShift, ...restedRecently].slice(0, need).map((r) => r.player);
 
     // --- 2b. WHERE they play -------------------------------------------------
+    /**
+     * Is this player owed the volunteer-keeper thank-you right now? They put
+     * their hand up, they actually took a turn in goal, they have not used up
+     * their shielded outfield shifts, and they are not someone who likes
+     * defending anyway.
+     */
+    const isShielded = (p) =>
+      p.wantsGoalieToday &&
+      gkTotal[p.id] > 0 &&
+      st[p.id].fieldShifts < KEEPER_SHIELDED_FIELD_SHIFTS &&
+      !(p.preferredPositions || []).includes('Defense');
+
     const open = new Set(FIELD_POSITIONS.map((p) => p.id));
     // Everyone is placed by score. There is no longer a pass that pins players
     // to the spot they held last shift: that pass, combined with the old
@@ -778,27 +800,25 @@ export function generateLineup(players, opts = {}) {
     // Preference pass: score every remaining (player, position) pair and take
     // the best ones greedily. 8x8 at most, so the cost is irrelevant and the
     // result is easy to reason about when a coach asks "why is he at Left D?".
-    const pairs = [];
-    unplaced.forEach((p) => {
+    /** One (player, position) score. Pulled out so the rounds below share it. */
+    const scorePair = (p, posId) => {
       const s0 = st[p.id];
-      open.forEach((posId) => {
-        const pos = POSITION_BY_ID[posId];
-        let score = 0;
-        if (!p.preferredPositions || p.preferredPositions.length === 0) {
-          score += W.NO_PREFERENCE;
-        } else if (p.preferredPositions.includes(pos.group)) {
-          score += W.PREFERRED_GROUP;
-        }
-        if (s0.lastPos && s0.lastPos !== 'GK') {
-          if (POSITION_BY_ID[s0.lastPos].group === pos.group) score += W.LINE_REPEAT;
-          if (s0.lastPos === posId) score += W.EXACT_REPEAT;
-        }
-        score += W.GROUP_REPEAT * s0.groupCount[pos.group];
-        score += rng() * 10;
-        pairs.push({ pid: p.id, posId, score });
-      });
-    });
-    pairs.sort((a, b) => b.score - a.score);
+      const pos = POSITION_BY_ID[posId];
+      let score = 0;
+      if (!p.preferredPositions || p.preferredPositions.length === 0) {
+        score += W.NO_PREFERENCE;
+      } else if (p.preferredPositions.includes(pos.group)) {
+        score += W.PREFERRED_GROUP;
+      }
+      if (s0.lastPos && s0.lastPos !== 'GK') {
+        if (POSITION_BY_ID[s0.lastPos].group === pos.group) score += W.LINE_REPEAT;
+        if (s0.lastPos === posId) score += W.EXACT_REPEAT;
+      }
+      score += W.GROUP_REPEAT * s0.groupCount[pos.group];
+      if (pos.group === 'Defense' && isShielded(p)) score += W.KEEPER_NOT_DEFENCE;
+      score += rng() * 10;
+      return score;
+    };
 
     const placed = new Set();
     const take = ({ pid, posId }) => {
@@ -814,18 +834,39 @@ export function generateLineup(players, opts = {}) {
       return ids.some((id) => shift[id] && needsSupportOn(byId[shift[id]], group));
     };
 
-    // First pass honours the balance rule; second pass places anyone it could
-    // not, because leaving a position empty is far worse than an unbalanced
-    // line. The repair below then cleans up what greedy could not foresee.
-    pairs.forEach((pair) => {
-      if (placed.has(pair.pid) || !open.has(pair.posId)) return;
-      if (wouldStack(pair.pid, pair.posId)) return;
-      take(pair);
-    });
-    pairs.forEach((pair) => {
-      if (placed.has(pair.pid) || !open.has(pair.posId)) return;
-      take(pair);
-    });
+    /**
+     * @param players    who to place this round
+     * @param allowBack  may they be given a back-line slot?
+     * @param respectBalance  honour the one-Support-per-line rule
+     */
+    const runRound = (players, allowBack, respectBalance) => {
+      const pairs = [];
+      players.forEach((p) => {
+        if (placed.has(p.id)) return;
+        open.forEach((posId) => {
+          if (!allowBack && POSITION_BY_ID[posId].group === 'Defense') return;
+          pairs.push({ pid: p.id, posId, score: scorePair(p, posId) });
+        });
+      });
+      pairs.sort((a, b) => b.score - a.score);
+      pairs.forEach((pair) => {
+        if (placed.has(pair.pid) || !open.has(pair.posId)) return;
+        if (respectBalance && wouldStack(pair.pid, pair.posId)) return;
+        take(pair);
+      });
+    };
+
+    // Volunteer keepers get FIRST REFUSAL on the non-defensive slots. A plain
+    // scoring penalty was not enough: the greedy runs across every player at
+    // once, so the midfield places were gone to other players' preferences
+    // before the keeper's turn came round, and they landed at the back anyway.
+    // Giving them their pick first is what actually delivers the thank-you.
+    runRound(unplaced.filter(isShielded), false, true);
+
+    // Everyone else, then a final pass that fills any hole left over — an open
+    // position is worse than an unbalanced line or a keeper at the back.
+    runRound(unplaced, true, true);
+    runRound(unplaced, true, false);
 
     repairLineBalance(shift, byId);
     if (lineViolations(shift, byId) > 0) exactRepair(shift, byId);

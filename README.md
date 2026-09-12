@@ -60,6 +60,21 @@ priorities in a strict order: **equity > continuity > preference**.
    column out. Nobody opts in → the two least-used keepers are drafted and the
    app says so.
 
+   **Volunteering earns something.** A player who puts their hand up *and*
+   takes a turn in goal gets first refusal on the non-defensive slots for their
+   next two outfield shifts. Goal is already the defensive, unglamorous job;
+   following a half in the net with a half at the back is a poor thank-you and
+   a poor advert for volunteering next week. Skipped entirely for anyone who
+   lists Defense as a preference — they get *more* of it, not less. Drafted
+   keepers do not get this: they never volunteered, and the point is to make
+   volunteering worth doing.
+
+   Measured over outfield shifts: a volunteer keeper spends **7%** of them at
+   the back against **38%** for an ordinary outfielder. It grades naturally
+   with how much they play — with two outfield shifts they play defence **0%**
+   of the time, with three **4%**, with five **94%**, because the shield covers
+   only the first two and then they take their turn like anyone else.
+
    **Keeping does not cost you your game.** Anyone who takes a turn in goal is
    guaranteed out-field shifts, scaled to how much of a half they kept:
 
