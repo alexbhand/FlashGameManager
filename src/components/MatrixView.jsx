@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { POSITIONS, SHIFTS_PER_HALF, TOTAL_SHIFTS } from '../lib/constants.js';
 import { computeGameStats } from '../lib/lineup.js';
-import { Card, SectionLabel } from './ui.jsx';
+import { renderLineupImage, lineupAsText } from '../lib/exportLineup.js';
+import { prettyDate, todayISO } from '../lib/format.js';
+import { Button, Card, SectionLabel } from './ui.jsx';
 import SwapModal from './SwapModal.jsx';
 
 /**
@@ -9,7 +11,14 @@ import SwapModal from './SwapModal.jsx';
  * The 8 columns are split into two 4-shift views so the grid stays readable
  * on a phone; the toggle follows whichever half is live by default.
  */
-export default function MatrixView({ roster, lineup, onLineupChange, liveShiftIndex }) {
+export default function MatrixView({
+  roster,
+  lineup,
+  onLineupChange,
+  liveShiftIndex,
+  opponent = '',
+  onNotify,
+}) {
   const [half, setHalf] = useState(liveShiftIndex >= SHIFTS_PER_HALF ? 2 : 1);
   const [cell, setCell] = useState(null); // { shiftIndex, positionId }
 
@@ -33,6 +42,84 @@ export default function MatrixView({ roster, lineup, onLineupChange, liveShiftIn
     onLineupChange(cell.shiftIndex, cell.positionId, playerId);
     setCell(null);
   };
+
+  // --- Sharing the lineup -------------------------------------------------
+  const dateLabel = prettyDate(todayISO());
+  const fileName = `flash-lineup-${todayISO()}${opponent ? `-vs-${opponent.replace(/\W+/g, '-')}` : ''}.png`;
+
+  /**
+   * The card is drawn ahead of time and parked in a ref.
+   *
+   * navigator.share() has to be called from inside the user's tap. On iOS,
+   * awaiting anything first — even a canvas toBlob that takes ten
+   * milliseconds — can break that chain and get the call rejected as though
+   * no gesture happened. So the image is ready before the button is pressed,
+   * and the handler just hands it over.
+   */
+  const cardRef = useRef(null);
+  useEffect(() => {
+    let cancelled = false;
+    cardRef.current = null;
+    renderLineupImage({ lineup, roster, opponent, dateLabel })
+      .then((blob) => {
+        if (cancelled || !blob) return;
+        cardRef.current = new File([blob], fileName, { type: 'image/png' });
+      })
+      .catch(() => {
+        cardRef.current = null; // fall back to drawing on demand
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lineup, roster, opponent, dateLabel, fileName]);
+
+  const [sharing, setSharing] = useState(false);
+
+  const shareLineup = useCallback(async () => {
+    setSharing(true);
+    try {
+      let file = cardRef.current;
+      if (!file) {
+        const blob = await renderLineupImage({ lineup, roster, opponent, dateLabel });
+        if (!blob) throw new Error('could not draw the card');
+        file = new File([blob], fileName, { type: 'image/png' });
+      }
+
+      // Preferred path: the native share sheet, which on a phone puts Messages
+      // one tap away. Everything else is a fallback for desktop browsers.
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: `Flash lineup · ${dateLabel}` });
+        onNotify?.({ title: 'Lineup shared', detail: dateLabel });
+        return;
+      }
+
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      onNotify?.({ title: 'Lineup saved', detail: fileName });
+    } catch (err) {
+      // Dismissing the share sheet is a normal thing to do, not an error.
+      if (err?.name === 'AbortError') return;
+      onNotify?.({ title: 'Could not share', detail: String(err?.message || err) });
+    } finally {
+      setSharing(false);
+    }
+  }, [lineup, roster, opponent, dateLabel, fileName, onNotify]);
+
+  const copyAsText = useCallback(async () => {
+    const text = lineupAsText({ lineup, roster, opponent, dateLabel });
+    try {
+      await navigator.clipboard.writeText(text);
+      onNotify?.({ title: 'Copied as text', detail: 'Paste into a message' });
+    } catch {
+      onNotify?.({ title: 'Could not copy', detail: 'Clipboard blocked by the browser' });
+    }
+  }, [lineup, roster, opponent, dateLabel, onNotify]);
 
   return (
     <div className="space-y-4">
@@ -154,6 +241,19 @@ export default function MatrixView({ roster, lineup, onLineupChange, liveShiftIn
               })}
           </div>
         </Card>
+      </div>
+
+      <div className="space-y-2 pb-2">
+        <Button variant="primary" className="w-full text-base" onClick={shareLineup} disabled={sharing}>
+          {sharing ? 'Preparing…' : 'Share Lineup'}
+        </Button>
+        <Button variant="outline" className="w-full text-sm" onClick={copyAsText}>
+          Copy as text
+        </Button>
+        <p className="px-1 text-center text-[11px] leading-relaxed text-slate-500">
+          Sends both halves as one image — on a phone this opens your share sheet, so you can text
+          it straight to another coach.
+        </p>
       </div>
 
       <SwapModal

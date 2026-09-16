@@ -556,6 +556,8 @@ export default function App() {
             lineup={lineup}
             onLineupChange={handleLineupChange}
             liveShiftIndex={clock.status === 'pregame' && clock.half === 1 ? -1 : globalShift}
+            opponent={settings.opponent}
+            onNotify={(t) => setToast({ id: Date.now(), ...t })}
           />
         )}
 

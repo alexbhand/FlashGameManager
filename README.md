@@ -31,7 +31,7 @@ browser's localStorage — there is no backend and nothing leaves the device.
 
 - **Setup** — attendance, position preferences (season-long), "Wants Goalie Today?" (per game), build lineup, and **Line Balance**.
 - **Live** — half clock counting up to 30:00, derived shift countdown, substitution alert, **drag-to-swap** on the pitch and bench, who's on / who's benched, and a next-shift preview split into three shoutable lists: **Going On** (from the bench), **Staying On** (everyone already out there, with position switchers flagged amber), and **Coming Off**. Positions are spelled out — "Center Mid", not "CM" — because the list is read aloud across a pitch.
-- **Matrix** — the full 8 × 9 grid, split into 1st/2nd half so it fits a phone. Tap any cell to swap.
+- **Matrix** — the full 8 × 9 grid, split into 1st/2nd half so it fits a phone. Tap any cell to swap. **Share Lineup** renders the whole game as one PNG and opens the phone's share sheet, so it can be texted to another coach; **Copy as text** is there for when an image is more than is wanted.
 - **Season** — cumulative shifts per player, broken out by GK / D / M / F.
 
 ## How fair play is enforced
@@ -277,6 +277,30 @@ wait. Verified both: a 60ms flick starts no drag, a 320ms hold does.
 The drag overlay is portal-rendered and floats above the page, so picking a
 player up never reflows the roster beneath — the same rule that governs the
 toast and the Setup list.
+
+## Sharing the lineup
+
+**Matrix → Share Lineup** draws both halves onto a canvas and hands the PNG to
+`navigator.share()`, which on a phone opens the native sheet with Messages one
+tap away. Desktop browsers without the Web Share API fall back to a download.
+
+Three decisions worth keeping:
+
+- **Canvas, not a DOM screenshot.** html2canvas and friends are another
+  dependency, they choke on the `oklch` colours Tailwind v4 emits, and they
+  would inherit the app's phone layout rather than producing something shaped
+  for a message thread.
+- **PNG, not JPEG.** The card is flat colour and small type — exactly what JPEG
+  smears. PNG is crisper *and* smaller here (~350 kB at 1520×2164).
+- **Light, not the app's dark theme.** The app is dark because one person set it
+  up and holds it; this image is read by someone else on an unknown phone,
+  possibly in sun, possibly printed. Dark text on a bright ground survives all
+  of that better.
+
+The card is rendered ahead of the tap and parked in a ref, because
+`navigator.share()` must be called from inside the user gesture — on iOS,
+awaiting even a 10ms `toBlob` first can get the call rejected as though no
+gesture happened.
 
 ## Keeping the plan in sync with Setup
 
