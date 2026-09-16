@@ -53,15 +53,19 @@ React 18 · Vite 6 · Tailwind CSS v4 (via `@tailwindcss/vite`, no config file �
 theme lives in `src/index.css`) · `@dnd-kit/core` 6.3. Only standard hooks:
 `useState`, `useEffect`, `useMemo`, `useCallback`, `useRef`.
 
-~4,260 lines across 22 source files.
+`@dnd-kit/core` is the **only** runtime dependency beyond React. Image export
+uses the platform `<canvas>` and `navigator.share`, not a library.
+
+~4,590 lines across 23 source files. Bundle 263 kB raw / 84 kB gzipped.
 
 ```
 src/
-  App.jsx                      595  state owner, clock, all handlers, view switch
+  App.jsx                      597  state owner, clock, all handlers, view switch
   lib/
     lineup.js                 1028  THE ALGORITHM — read this first
     constants.js               167  roster, positions, all tunable numbers
     persistence.js             192  validators for every localStorage key
+    exportLineup.js            223  canvas lineup card + plain-text export
     useLocalStorage.js          53  useState that mirrors to localStorage
     useWakeLock.js              73  keeps the screen awake while the clock runs
     format.js                   36  clock and date formatting
@@ -70,8 +74,8 @@ src/
     LiveDashboard.jsx          527  View B — clocks, alerts, sub preview
     PreGameSetup.jsx           264  View A — attendance, preferences, goalies
     PitchBoard.jsx             248  drag-and-drop pitch + bench
+    MatrixView.jsx             270  View C — 8x9 grid, tap to swap, share
     SeasonHistory.jsx          174  View D — cumulative stats, game log
-    MatrixView.jsx             170  View C — 8x9 grid, tap to swap
     LineBalanceSheet.jsx       146  coach's Anchor/Steady/Support ratings
     RosterChangeSheet.jsx      142  mid-game arrivals and departures
     SwapModal.jsx              113  tap-to-swap sheet used by the Matrix
@@ -79,7 +83,7 @@ src/
     ErrorBoundary.jsx           65  catches render crashes, offers recovery
     Toast.jsx                   59  confirmation pill
     TabBar.jsx                  38  bottom navigation
-test/                              verification harnesses — see section 12
+test/                              verification harnesses — see section 13
 ```
 
 ---
@@ -90,7 +94,7 @@ test/                              verification harnesses — see section 12
 |---|---|
 | **Setup** | Attendance, position preferences (season-long), "Wants Goalie Today?" (per game), Line Balance sheet, Build/Regenerate |
 | **Live** | Half clock, shift countdown, substitution alert, drag-to-swap pitch and bench, next-shift call sheet, roster-change sheet |
-| **Matrix** | Full 8 shifts × 9 positions, split into halves, tap any cell to swap, live shift-count check |
+| **Matrix** | Full 8 shifts × 9 positions, split into halves, tap any cell to swap, live shift-count check, **Share Lineup** / Copy as text |
 | **Season** | Cumulative shifts per player by GK/D/M/F, game log with per-game delete |
 
 ---
@@ -378,7 +382,41 @@ not a replacement for the precise editor.
 
 ---
 
-## 11. Measured guarantees
+## 11. Sharing the lineup
+
+**Matrix → Share Lineup** draws both halves onto a canvas and hands the PNG to
+`navigator.share()`, which on a phone opens the native sheet with Messages one
+tap away. Browsers without the Web Share API fall back to a download named
+`flash-lineup-<date>-vs-<opponent>.png`. **Copy as text** produces a compact
+per-shift listing (~1,600 chars) for when an image is more than is wanted.
+
+The card is portrait, one table per half, each with the clock time every shift
+starts at, the keeper row highlighted, and a resting list underneath — "who is
+off?" being the next question another coach asks.
+
+Four decisions, all of which have a reason:
+
+- **Canvas, not a DOM screenshot.** html2canvas and its relatives are another
+  dependency, they choke on the `oklch` colours Tailwind v4 emits, and they
+  would inherit the app's phone layout rather than something shaped for a
+  message thread.
+- **PNG, not JPEG.** Flat colour and small type is exactly what JPEG smears.
+  PNG is crisper *and* smaller here — ~350 kB at 1520 × 2164 (760 × 1082 at a
+  fixed 2× so the file looks the same whatever device made it).
+- **Light, not the app's dark theme.** The app is dark because one person set it
+  up and holds it. This image is read by somebody else on an unknown phone,
+  possibly in sun, possibly printed. Dark text on a bright ground survives all
+  of that.
+- **Rendered ahead of the tap**, parked in a ref, re-rendered by an effect on
+  `[lineup, roster, opponent]`. `navigator.share()` must be called from inside
+  the user gesture, and on iOS awaiting even a 10 ms `toBlob` first can get the
+  call rejected as though no gesture happened.
+
+`AbortError` from dismissing the share sheet is treated as a normal outcome,
+not a failure. Verified at 13 and 16 present — seven resting players wrap to
+exactly three lines without overflowing.
+
+## 12. Measured guarantees
 
 Reproduce with the harnesses in `test/`.
 
@@ -410,7 +448,7 @@ Reproduce with the harnesses in `test/`.
 
 ---
 
-## 12. Testing
+## 13. Testing
 
 ```bash
 cd test && node equity.mjs sits.mjs ...   # see test/README.md
@@ -424,7 +462,7 @@ only builds. Browser behaviour was verified by driving the running app
 
 ---
 
-## 13. Known constraints
+## 14. Known constraints
 
 **Data lives on one device.** Phone and laptop keep entirely separate season
 histories and never sync. Clearing site data wipes the season. Pick one device.
@@ -449,6 +487,15 @@ arithmetically (N−9 sitters must fit into 8 outfield slots). Not an issue for 
 **9 or fewer present** makes the keeper kit-change rule impossible — everyone
 plays every shift. The app warns rather than failing.
 
+**The share sheet is untested on a real phone.** `navigator.share` does not
+exist in the Chromium pane used for verification, so the download fallback is
+well tested and the primary path — the thing that actually puts the lineup into
+Messages — is not. If Share Lineup downloads instead of opening a share sheet
+on iOS, that is the first thing to look at.
+
+**The shared image is ~350 kB.** Fine for iMessage; may be recompressed by SMS
+or by some Android messaging apps.
+
 **Drag thresholds are untested by a real finger.** The 220ms hold discriminates
 correctly in code, but how it feels with cold hands or gloves is unknown.
 
@@ -458,7 +505,7 @@ players in one position.
 
 ---
 
-## 14. Bugs found and fixed — do not reintroduce
+## 15. Bugs found and fixed — do not reintroduce
 
 Each of these was shipped, then caught. They are the regression surface.
 
@@ -492,7 +539,7 @@ Each of these was shipped, then caught. They are the regression surface.
 
 ---
 
-## 15. If you change X, check Y
+## 16. If you change X, check Y
 
 | Change | Check |
 |---|---|
@@ -501,13 +548,15 @@ Each of these was shipped, then caught. They are the regression surface.
 | Anything rendering in a scrolling list | measure layout drift before/after a tap |
 | A rebuild path | that it starts from `replanFrom`, never 0 |
 | A new persisted field | add it to `persistence.js` *and* `planSignature` |
+| `exportLineup.js` or the roster size | re-render the card at 13 *and* 16 present and look at it — the resting row is the part that overflows |
+| Anything touching `navigator.share` | the call must stay synchronous inside the tap; pre-render, never `await` first |
 | dnd-kit config | that a drag released over nothing still cancels |
 | A hook dependency array | that every identifier is declared above it |
 | Anything at all | load the page — a green build is not a working app |
 
 ---
 
-## 16. Working agreements that produced this
+## 17. Working agreements that produced this
 
 - **Test, don't assert.** Every number here came from running something. Claims
   verified by driving the real UI, not by reading code.
