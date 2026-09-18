@@ -271,12 +271,20 @@ export default function App() {
   );
 
   const handleDepart = useCallback(
-    (playerId) =>
-      applyAvailability(playerId, {
-        // They keep every shift already played; they are out from here on.
-        departShift: replanFrom,
-      }),
-    [applyAvailability, replanFrom]
+    (playerId) => {
+      const player = roster.find((p) => p.id === playerId);
+      // Leaving at or before the shift they were due to arrive means they are
+      // simply not playing today. Recording that as a window would leave them
+      // ticked as present with nothing to play, which is how a child ends up at
+      // a game with no shifts.
+      if (player && (player.arriveShift || 0) >= replanFrom) {
+        applyAvailability(playerId, { isPresent: false, arriveShift: 0, departShift: null });
+        return;
+      }
+      // Otherwise they keep every shift already played and are out from here on.
+      applyAvailability(playerId, { departShift: replanFrom });
+    },
+    [roster, applyAvailability, replanFrom]
   );
 
   const handleUndoAvailability = useCallback(
@@ -324,6 +332,13 @@ export default function App() {
     },
     [lineup, globalShift, roster, present, setLineup]
   );
+
+  /** Put everyone back to "here for the whole game". */
+  const handleClearAvailability = useCallback(() => {
+    const fresh = roster.map((p) => ({ ...p, arriveShift: 0, departShift: null }));
+    setRoster(fresh);
+    if (lineupReady) buildLineup(replanFrom, fresh, { reshuffle: false });
+  }, [roster, setRoster, lineupReady, buildLineup, replanFrom]);
 
   const handleLineupChange = useCallback(
     (shiftIndex, positionId, playerId) =>
@@ -415,8 +430,13 @@ export default function App() {
       return;
     setUndoPoint(null);
     setClock(INITIAL_CLOCK);
-    buildLineup(0); // re-plan, so newly ticked goalies actually take effect
-  }, [setClock, buildLineup]);
+    // Starting the game over means starting availability over too. Leaving a
+    // mid-game departure in place made it survive into the next game, where it
+    // was invisible on Setup and quietly cost that player their shifts.
+    const fresh = roster.map((p) => ({ ...p, arriveShift: 0, departShift: null }));
+    setRoster(fresh);
+    buildLineup(0, fresh); // re-plan, so newly ticked goalies actually take effect
+  }, [setClock, buildLineup, roster, setRoster]);
 
   // --- Season actions -------------------------------------------------------
   const handleFinishGame = useCallback(() => {
@@ -507,6 +527,7 @@ export default function App() {
             onGoLive={() => setTab('live')}
             seasonGkShifts={seasonGkShifts}
             onOpenRatings={() => setRatingsOpen(true)}
+            onClearAvailability={handleClearAvailability}
           />
         )}
 

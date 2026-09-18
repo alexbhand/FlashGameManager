@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { PREFERENCE_GROUPS, TOTAL_SLOTS, POSITIONS } from '../lib/constants.js';
+import { PREFERENCE_GROUPS, TOTAL_SLOTS, POSITIONS, TOTAL_SHIFTS } from '../lib/constants.js';
+import { availabilityLabel } from '../lib/lineup.js';
 import { Button, Card, SectionLabel, Banner, Stat } from './ui.jsx';
 
 /**
@@ -17,6 +18,7 @@ export default function PreGameSetup({
   onGoLive,
   seasonGkShifts = {},
   onOpenRatings,
+  onClearAvailability,
 }) {
   const present = useMemo(() => roster.filter((p) => p.isPresent), [roster]);
   const keepers = useMemo(() => present.filter((p) => p.wantsGoalieToday), [present]);
@@ -37,6 +39,12 @@ export default function PreGameSetup({
         .sort((a, b) => b.n - a.n),
     [roster, seasonGkShifts]
   );
+
+  /** Here, but not for the whole game. */
+  const partGame = (p) =>
+    p.isPresent && ((p.arriveShift || 0) > 0 || (p.departShift != null && p.departShift < TOTAL_SHIFTS));
+
+  const anyPartGame = roster.some(partGame);
 
   const update = (id, patch) =>
     setRoster((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -83,6 +91,22 @@ export default function PreGameSetup({
             All Out
           </Button>
         </div>
+
+        {anyPartGame && (
+          <div className="mt-3 rounded-xl border border-amber-500/50 bg-amber-500/10 px-3 py-2">
+            <p className="text-xs font-semibold text-amber-200">
+              Some players are set to play only part of the game (shown in amber below). If that is
+              left over from a previous game, clear it.
+            </p>
+            <Button
+              variant="outline"
+              className="mt-2 min-h-[48px] w-full text-xs"
+              onClick={onClearAvailability}
+            >
+              Everyone here for the whole game
+            </Button>
+          </div>
+        )}
 
         <Button variant="outline" className="mt-3 w-full text-sm" onClick={onOpenRatings}>
           Line Balance{ratedCount > 0 ? ` · ${ratedCount} set` : ''}
@@ -148,12 +172,20 @@ export default function PreGameSetup({
                   {/* Season keeper load, so you can see who has been carrying
                       the gloves before deciding who takes them today. Rendered
                       unconditionally (blank when zero) to keep row height fixed. */}
-                  <span className="block min-h-[13px] text-[10px] font-black uppercase tracking-wider text-fuchsia-400">
-                    {seasonGkShifts[player.id] > 0
-                      ? `${seasonGkShifts[player.id]} GK shift${
-                          seasonGkShifts[player.id] === 1 ? '' : 's'
-                        } this season`
-                      : ''}
+                  {/* A part-game availability window is otherwise invisible
+                      here — the row would show a plain green tick while the
+                      player sat out most of the match. */}
+                  <span className="block min-h-[13px] text-[10px] font-black uppercase tracking-wider">
+                    {partGame(player) ? (
+                      <span className="text-amber-300">{availabilityLabel(player)}</span>
+                    ) : seasonGkShifts[player.id] > 0 ? (
+                      <span className="text-fuchsia-400">
+                        {seasonGkShifts[player.id]} GK shift
+                        {seasonGkShifts[player.id] === 1 ? '' : 's'} this season
+                      </span>
+                    ) : (
+                      ''
+                    )}
                   </span>
                 </div>
 

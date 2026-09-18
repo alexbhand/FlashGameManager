@@ -884,6 +884,20 @@ export function generateLineup(players, opts = {}) {
     );
   }
 
+  // Last line of defence on the one promise this app makes. If anybody marked
+  // present finished with nothing, say so by name rather than letting a coach
+  // discover it at full time.
+  const neverPlays = roster.filter(
+    (p) => !lineup.some((shift) => POSITION_IDS.some((id) => shift[id] === p.id))
+  );
+  if (neverPlays.length) {
+    warnings.push(
+      `${neverPlays.map((p) => p.name).join(', ')} ${neverPlays.length === 1 ? 'is' : 'are'} ` +
+        `marked present but ${neverPlays.length === 1 ? 'has' : 'have'} no shifts. ` +
+        `Check their arrive/leave times on the Live tab, or mark them out on Setup.`
+    );
+  }
+
   return { lineup, warnings, targets, present: roster };
 }
 

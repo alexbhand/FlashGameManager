@@ -122,8 +122,10 @@ Shift length 7:30. Boundaries are fixed at 7:30 / 15:00 / 22:30 / 30:00.
 }
 ```
 
-**Per-game fields are cleared when a game is saved**: `wantsGoalieToday`,
-`arriveShift`, `departShift`. Season-long fields are never cleared:
+**Per-game fields are cleared when a game is saved *and* by Reset Game**:
+`wantsGoalieToday`, `arriveShift`, `departShift`. An availability window that
+outlives its game is invisible on Setup and silently costs that player shifts —
+see bug 13. Season-long fields are never cleared:
 `preferredPositions`, `offense`, `defense`.
 
 **Roster (16):** Hudson, Bear, Morrison, Colin, Henry, Sawyer, Ruben, Ari,
@@ -536,6 +538,14 @@ Each of these was shipped, then caught. They are the regression surface.
     on the last shift.
 12. **`closestCenter` made drags uncancellable** — releasing anywhere swapped
     the player with the nearest one.
+13. **A present player got zero shifts.** Reported from a real game. Availability
+    windows (`arriveShift` / `departShift`) were cleared only when a game was
+    *saved*, not by Reset Game, so a mid-game departure survived into the next
+    game — and the Setup roster renders only `isPresent`, so the player showed a
+    normal green tick. Fixed four ways: impossible windows heal on read,
+    Reset Game clears them, Setup shows a part-game window in amber with a
+    one-tap "everyone here for the whole game", and the generator now names
+    anyone present who finishes with nothing. `test/zeroshift.mjs` guards it.
 
 ---
 
@@ -548,6 +558,7 @@ Each of these was shipped, then caught. They are the regression surface.
 | Anything rendering in a scrolling list | measure layout drift before/after a tap |
 | A rebuild path | that it starts from `replanFrom`, never 0 |
 | A new persisted field | add it to `persistence.js` *and* `planSignature` |
+| Anything touching `arriveShift` / `departShift` | run `test/zeroshift.mjs`; a present player with no shifts is the worst bug this app can have |
 | `exportLineup.js` or the roster size | re-render the card at 13 *and* 16 present and look at it — the resting row is the part that overflows |
 | Anything touching `navigator.share` | the call must stay synchronous inside the tap; pre-render, never `await` first |
 | dnd-kit config | that a drag released over nothing still cancels |

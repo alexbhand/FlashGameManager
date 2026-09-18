@@ -26,6 +26,29 @@ import { emptyLineup } from './lineup.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * Availability window, healed.
+ *
+ * `arriveShift >= departShift` describes a player who is here but never
+ * available for a single shift — and because the Setup list only renders
+ * `isPresent`, they show a green tick and are silently left out of all eight
+ * shifts. That is the worst failure this app has: a child at the game who
+ * never gets on. An impossible window is not information, so it is thrown away
+ * and the player treated as available for the whole game.
+ */
+const readWindow = (p) => {
+  const arrive =
+    Number.isInteger(p.arriveShift) && p.arriveShift >= 0 && p.arriveShift < TOTAL_SHIFTS
+      ? p.arriveShift
+      : 0;
+  const depart =
+    Number.isInteger(p.departShift) && p.departShift > 0 && p.departShift <= TOTAL_SHIFTS
+      ? p.departShift
+      : null;
+  if (depart != null && arrive >= depart) return { arriveShift: 0, departShift: null };
+  return { arriveShift: arrive, departShift: depart };
+};
+
 /** Accepts current labels and the blunter ones an earlier build stored. */
 const readBalance = (v) => {
   if (BALANCE_LEVELS.includes(v)) return v;
@@ -49,14 +72,7 @@ export function validateRoster(saved) {
             ? p.preferredPositions.filter((g) => typeof g === 'string')
             : [],
           wantsGoalieToday: p.wantsGoalieToday === true,
-          arriveShift:
-            Number.isInteger(p.arriveShift) && p.arriveShift >= 0 && p.arriveShift < TOTAL_SHIFTS
-              ? p.arriveShift
-              : 0,
-          departShift:
-            Number.isInteger(p.departShift) && p.departShift > 0 && p.departShift <= TOTAL_SHIFTS
-              ? p.departShift
-              : null,
+          ...readWindow(p),
           offense: readBalance(p.offense),
           defense: readBalance(p.defense),
         });
