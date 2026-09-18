@@ -151,12 +151,20 @@ const QUARTER_BLOCKS = [
  * @param volunteers  present players with wantsGoalieToday === true
  * @param fallbackPool present players (used only when nobody volunteers)
  * @param opts.singleKeeperBothHalves  answer to the "want both halves?" prompt
+ * @param opts.firstHalfKeeperId  coach's pick of who keeps the 1st half when
+ *        exactly two players volunteer. Ignored unless it names one of them,
+ *        so it heals itself when the volunteers change week to week.
  * @param opts.seasonGkShifts  { [playerId]: shifts } — used to order keepers so
  *        the player who has kept least this season gets first pick of halves.
  * @returns { slots: string[8], warnings: string[] }
  */
 export function allocateGoalies(volunteers, fallbackPool, opts = {}) {
-  const { singleKeeperBothHalves = false, seasonGkShifts = {}, rng = null } = opts;
+  const {
+    singleKeeperBothHalves = false,
+    seasonGkShifts = {},
+    rng = null,
+    firstHalfKeeperId = null,
+  } = opts;
   const slots = new Array(TOTAL_SHIFTS).fill(null);
   const warnings = [];
   const assign = (block, id) => block.forEach((s) => { slots[s] = id; });
@@ -239,8 +247,13 @@ export function allocateGoalies(volunteers, fallbackPool, opts = {}) {
 
   // --- Two keepers: a half each --------------------------------------------
   if (keepers.length === 2) {
-    assign(HALF_BLOCKS[0], keepers[0].id);
-    assign(HALF_BLOCKS[1], keepers[1].id);
+    // Default order is byLeastKept, which spreads keeper time over the season.
+    // The coach can override it — one of the two may have a reason to take the
+    // first half that the season totals know nothing about.
+    let [first, second] = keepers;
+    if (firstHalfKeeperId === second.id) [first, second] = [second, first];
+    assign(HALF_BLOCKS[0], first.id);
+    assign(HALF_BLOCKS[1], second.id);
     return { slots, warnings };
   }
 
@@ -405,6 +418,7 @@ export function generateLineup(players, opts = {}) {
     seed = 1,
     singleKeeperBothHalves = false,
     seasonGkShifts = {},
+    firstHalfKeeperId = null,
     fromShift = 0,
     baseLineup = null,
   } = opts;
@@ -466,7 +480,7 @@ export function generateLineup(players, opts = {}) {
     const alloc = allocateGoalies(
       roster.filter((p) => p.wantsGoalieToday && isAvailableAt(p, 0)),
       roster,
-      { singleKeeperBothHalves, seasonGkShifts, rng }
+      { singleKeeperBothHalves, seasonGkShifts, rng, firstHalfKeeperId }
     );
     gkSlots = alloc.slots;
     warnings.push(...alloc.warnings);
@@ -1012,7 +1026,7 @@ export function applySwap(lineup, shiftIndex, positionId, playerId) {
  * deliberate manual swap on the Matrix as "out of date".
  */
 export function planSignature(players, opts = {}) {
-  const { singleKeeperBothHalves = false } = opts;
+  const { singleKeeperBothHalves = false, firstHalfKeeperId = null } = opts;
   const parts = players
     .filter((p) => p.isPresent)
     .map(
@@ -1021,7 +1035,7 @@ export function planSignature(players, opts = {}) {
         `${p.wantsGoalieToday ? 'gk' : '-'}:${p.offense || 'Steady'}/${p.defense || 'Steady'}`
     )
     .sort();
-  return `${singleKeeperBothHalves ? 'both' : 'one'}|${parts.join(',')}`;
+  return `${singleKeeperBothHalves ? 'both' : 'one'}|${firstHalfKeeperId || '-'}|${parts.join(',')}`;
 }
 
 /** True when the saved lineup no longer matches who is actually here — a kid

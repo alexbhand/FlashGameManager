@@ -19,6 +19,8 @@ export default function PreGameSetup({
   seasonGkShifts = {},
   onOpenRatings,
   onClearAvailability,
+  keeperHalves = null,
+  onSwapKeeperHalves,
 }) {
   const present = useMemo(() => roster.filter((p) => p.isPresent), [roster]);
   const keepers = useMemo(() => present.filter((p) => p.wantsGoalieToday), [present]);
@@ -241,6 +243,38 @@ export default function PreGameSetup({
               </Banner>
             ))}
           </div>
+        )}
+
+        {/* Two volunteers: say who has which half, and let it be flipped.
+            Same place as the lone-keeper prompt — below the roster, where it
+            cannot reflow the list under a thumb. */}
+        {keeperHalves && (
+          <Card className="border-fuchsia-500/40 bg-fuchsia-500/5 p-4">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-fuchsia-300">
+              Two goalies today
+            </p>
+            <div className="mt-3 flex gap-2">
+              {[
+                { label: '1st half', player: keeperHalves.first },
+                { label: '2nd half', player: keeperHalves.second },
+              ].map(({ label, player }) => (
+                <div
+                  key={label}
+                  className="flex-1 rounded-xl border border-fuchsia-500/40 bg-slate-900/60 px-2 py-3 text-center"
+                >
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    {label}
+                  </p>
+                  <p className="mt-1 truncate text-lg font-black uppercase tracking-tight text-white">
+                    {player.name}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <Button variant="outline" className="mt-3 w-full text-sm" onClick={onSwapKeeperHalves}>
+              ⇄ Swap halves
+            </Button>
+          </Card>
         )}
 
         {/* Lives BELOW the roster on purpose — see the note on row height. */}

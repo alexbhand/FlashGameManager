@@ -74,7 +74,12 @@ const INITIAL_CLOCK = {
 /** Clock reading at which shift `i` (0-based, within a half) is due to end. */
 export const shiftDueAt = (shiftInHalf) => (shiftInHalf + 1) * SHIFT_MS;
 
-const INITIAL_SETTINGS = { singleKeeperBothHalves: false, seed: 1, opponent: '' };
+const INITIAL_SETTINGS = {
+  singleKeeperBothHalves: false,
+  seed: 1,
+  opponent: '',
+  firstHalfKeeperId: null, // per game: which of two volunteers takes the 1st half
+};
 
 export default function App() {
   // --- Persisted state ------------------------------------------------------
@@ -134,8 +139,12 @@ export default function App() {
    * metadata existed fall back to the old attendance-only heuristic.
    */
   const currentSignature = useMemo(
-    () => planSignature(roster, { singleKeeperBothHalves: settings.singleKeeperBothHalves }),
-    [roster, settings.singleKeeperBothHalves]
+    () =>
+      planSignature(roster, {
+        singleKeeperBothHalves: settings.singleKeeperBothHalves,
+        firstHalfKeeperId: settings.firstHalfKeeperId,
+      }),
+    [roster, settings.singleKeeperBothHalves, settings.firstHalfKeeperId]
   );
   const stale = useMemo(() => {
     if (!lineupReady) return false;
@@ -172,6 +181,7 @@ export default function App() {
       const result = generateLineup(rosterUsed, {
         seed,
         singleKeeperBothHalves: settings.singleKeeperBothHalves,
+        firstHalfKeeperId: settings.firstHalfKeeperId,
         seasonGkShifts,
         fromShift,
         baseLineup: fromShift > 0 ? lineup : null,
@@ -182,6 +192,7 @@ export default function App() {
       setLineupMeta({
         signature: planSignature(rosterUsed, {
           singleKeeperBothHalves: settings.singleKeeperBothHalves,
+          firstHalfKeeperId: settings.firstHalfKeeperId,
         }),
         builtAt: Date.now(),
       });
@@ -206,6 +217,7 @@ export default function App() {
       lineup,
       settings.seed,
       settings.singleKeeperBothHalves,
+      settings.firstHalfKeeperId,
       seasonGkShifts,
       setLineup,
       setSettings,
@@ -333,6 +345,33 @@ export default function App() {
     [lineup, globalShift, roster, present, setLineup]
   );
 
+  /**
+   * The two volunteers, in the order they will actually keep. Read from the
+   * built lineup where there is one, because that is the ground truth; before
+   * a build, fall back to the coach's pick and then to roster order.
+   */
+  const keeperHalves = useMemo(() => {
+    const volunteers = roster.filter((p) => p.isPresent && p.wantsGoalieToday);
+    if (volunteers.length !== 2) return null;
+
+    // Read the order out of the built lineup, and show nothing until there is
+    // one. The default ordering depends on season GK totals and a seeded
+    // tie-break, so guessing it here would sometimes disagree with what the
+    // builder actually does — and a card that says Henry keeps first when the
+    // matrix says Madden is worse than no card at all.
+    const firstId = lineup?.[0]?.GK;
+    const secondId = lineup?.[SHIFTS_PER_HALF]?.GK;
+    const first = volunteers.find((v) => v.id === firstId);
+    const second = volunteers.find((v) => v.id === secondId);
+    if (!first || !second || first.id === second.id) return null;
+    return { first, second };
+  }, [roster, lineup]);
+
+  const handleSwapKeeperHalves = useCallback(() => {
+    if (!keeperHalves) return;
+    setSettings((s) => ({ ...s, firstHalfKeeperId: keeperHalves.second.id }));
+  }, [keeperHalves, setSettings]);
+
   /** Put everyone back to "here for the whole game". */
   const handleClearAvailability = useCallback(() => {
     const fresh = roster.map((p) => ({ ...p, arriveShift: 0, departShift: null }));
@@ -452,7 +491,7 @@ export default function App() {
     setClock(INITIAL_CLOCK);
     setLineup(emptyLineup());
     setLineupMeta(null);
-    setSettings((s) => ({ ...s, opponent: '' }));
+    setSettings((s) => ({ ...s, opponent: '', firstHalfKeeperId: null }));
     // Goalie opt-in and availability windows are per-game; clear them for next
     // week. Position preferences are season-long and deliberately untouched.
     setRoster((prev) =>
@@ -528,6 +567,8 @@ export default function App() {
             seasonGkShifts={seasonGkShifts}
             onOpenRatings={() => setRatingsOpen(true)}
             onClearAvailability={handleClearAvailability}
+            keeperHalves={keeperHalves}
+            onSwapKeeperHalves={handleSwapKeeperHalves}
           />
         )}
 

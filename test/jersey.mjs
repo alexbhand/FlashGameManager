@@ -25,6 +25,10 @@ for (const n of [10,11,12,13,14,15,16]) {
   }
 }
 console.log(`games: ${games}   keeper handovers: ${handovers}`);
+console.log('NOTE: this is an aggregate over ALL handovers. Half-time handovers are');
+console.log('      exempt from the kit rule by design, so a non-zero number here is');
+console.log('      expected — run halftime.mjs, or split by boundary, for the');
+console.log('      number that actually reflects the rule.');
 console.log(`FIELD -> GOAL with no bench shift between: ${intoGoal}  (${(100*intoGoal/handovers).toFixed(0)}% of handovers)`);
 console.log(`   of those, at the half-time break:       ${atHalfTime}`);
 console.log(`GOAL -> FIELD with no bench shift between: ${outOfGoal}  (${(100*outOfGoal/handovers).toFixed(0)}% of handovers)`);

@@ -180,6 +180,10 @@ export function validateSettings(saved, initial) {
     if (!isObj(saved)) return { ...initial };
     return {
       singleKeeperBothHalves: saved.singleKeeperBothHalves === true,
+      firstHalfKeeperId:
+        typeof saved.firstHalfKeeperId === 'string' && saved.firstHalfKeeperId
+          ? saved.firstHalfKeeperId
+          : null,
       seed: Number.isFinite(saved.seed) ? saved.seed : initial.seed,
       opponent: typeof saved.opponent === 'string' ? saved.opponent : '',
     };

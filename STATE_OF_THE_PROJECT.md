@@ -123,7 +123,8 @@ Shift length 7:30. Boundaries are fixed at 7:30 / 15:00 / 22:30 / 30:00.
 ```
 
 **Per-game fields are cleared when a game is saved *and* by Reset Game**:
-`wantsGoalieToday`, `arriveShift`, `departShift`. An availability window that
+`wantsGoalieToday`, `arriveShift`, `departShift`. `settings.firstHalfKeeperId`
+is cleared on save too. An availability window that
 outlives its game is invisible on Setup and silently costs that player shifts —
 see bug 13. Season-long fields are never cleared:
 `preferredPositions`, `offense`, `defense`.
@@ -194,13 +195,27 @@ play so no block crosses half time:
 |---|---|
 | 0 | four drafted keepers, 15 min each |
 | 1 | a full half; the other half split between two drafted keepers (or all 60 if they ask) |
-| 2 | a half each |
+| 2 | a half each — **the coach picks who takes which half**, see below |
 | 3 | 4 + 2 + 2 |
 | 4 | 2 + 2 + 2 + 2 |
 | 5+ | only 4 get a turn; the rest are named as first in line next game |
 
 Ordering is by fewest season GK shifts, tie-broken by a seeded random key (an
 earlier alphabetical tie-break drafted the same child every week).
+
+**With exactly two volunteers the coach can swap the halves.** Setup shows a
+card naming who keeps each half with a **⇄ Swap halves** button, backed by
+`settings.firstHalfKeeperId`. The pick is per-game and cleared on save, and it
+is ignored unless it names one of the current two volunteers, so it heals
+itself when the volunteer set changes. Which half a keeper takes has no effect
+on season GK fairness — both get four shifts either way — so the override costs
+nothing.
+
+The card renders **only once a lineup exists**, and reads the order out of that
+lineup rather than predicting it. The default ordering depends on season totals
+and a seeded tie-break, so a prediction sometimes disagreed with what the
+builder actually did — and a card claiming Henry keeps first while the matrix
+says Madden is worse than no card at all.
 
 **Drafted keepers are capped at 15 minutes** (`DRAFTED_KEEPER_MAX_SHIFTS = 2`).
 Volunteering for a half is one thing; being handed half a match of a job you
@@ -339,7 +354,7 @@ These are invariants. Breaking one is a bug.
 | `flash.lineupMeta.v1` | `planSignature` of the inputs the lineup was built from |
 | `flash.gameState.v1` | clock |
 | `flash.completedGames.v1` | season history |
-| `flash.settings.v1` | opponent, seed, both-halves answer |
+| `flash.settings.v1` | opponent, seed, both-halves answer, first-half keeper pick |
 
 **Every key is validated on read** (`persistence.js`). `JSON.parse` succeeding
 does not mean a value is usable — a truncated write or hand-edited key used to
@@ -434,8 +449,12 @@ Reproduce with the harnesses in `test/`.
   0 short in the other half.
 - **Drafted keepers never exceed 15 minutes** — 960 blocks checked, 0 breaches,
   0 shifts with an empty net.
-- **Kit changes:** mid-half goal→field break honoured 100%; field→goal 74%, the
-  remainder being cases where a rest shift would have meant sitting twice.
+- **Kit changes:** mid-half goal→field break honoured **100%**; field→goal 73%,
+  the remainder being cases where a rest shift would have meant sitting twice.
+  Note `test/jersey.mjs` prints an aggregate over *all* handovers, which
+  includes the half-time ones that are exempt by design — a non-zero number
+  there is expected. Split by boundary, or use `halftime.mjs`, for the figure
+  that reflects the rule.
 - **Rotation:** same line again 7.5%, same exact slot 2.2% of 22,575
   transitions. Players with 3+ field shifts see 4–5 different positions.
 - **Preference** still biases without owning: a Defense preference yields 58%
