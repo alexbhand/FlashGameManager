@@ -13,6 +13,7 @@ import {
   isLineupStale,
   planSignature,
   applySwap,
+  applyMatrixSwap,
 } from './lib/lineup.js';
 import { todayISO } from './lib/format.js';
 import { useLocalStorage } from './lib/useLocalStorage.js';
@@ -379,6 +380,34 @@ export default function App() {
     if (lineupReady) buildLineup(replanFrom, fresh, { reshuffle: false });
   }, [roster, setRoster, lineupReady, buildLineup, replanFrom]);
 
+  /**
+   * Drag-and-drop on the matrix. Unlike the pitch this can cross shifts, so the
+   * refusals are worth reporting — a silently ignored drag reads as a broken
+   * gesture rather than a rule.
+   */
+  const handleMatrixDrag = useCallback(
+    (from, to) => {
+      const nameOf = Object.fromEntries(roster.map((p) => [p.id, p.name]));
+      const res = applyMatrixSwap(lineup, from, to, nameOf);
+      if (!res.ok) {
+        if (res.reason) setToast({ id: Date.now(), title: 'Not swapped', detail: res.reason });
+        return;
+      }
+      setLineup(res.lineup);
+      const a = nameOf[lineup[from.shift][from.posId]];
+      const b = nameOf[lineup[to.shift][to.posId]];
+      const sameShift = from.shift === to.shift;
+      setToast({
+        id: Date.now(),
+        title: b ? `${a} ⇄ ${b}` : `${a} → ${to.posId}`,
+        detail: sameShift
+          ? `Shift ${from.shift + 1}`
+          : `Shift ${from.shift + 1} ⇄ shift ${to.shift + 1}`,
+      });
+    },
+    [lineup, roster, setLineup]
+  );
+
   const handleLineupChange = useCallback(
     (shiftIndex, positionId, playerId) =>
       setLineup((prev) => applySwap(prev, shiftIndex, positionId, playerId)),
@@ -620,6 +649,7 @@ export default function App() {
             liveShiftIndex={clock.status === 'pregame' && clock.half === 1 ? -1 : globalShift}
             opponent={settings.opponent}
             onNotify={(t) => setToast({ id: Date.now(), ...t })}
+            onMatrixDrag={handleMatrixDrag}
           />
         )}
 

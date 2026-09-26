@@ -994,6 +994,54 @@ export function diffShifts(currentShift, nextShift) {
 }
 
 /**
+ * Drag-and-drop on the matrix, where a drag can cross shifts as well as
+ * positions. Two cells, and the players in them trade places.
+ *
+ * Within one shift this is the ordinary swap. ACROSS shifts it is still a
+ * trade rather than a move, and that is the whole design: moving a player from
+ * shift 2 to shift 5 would leave shift 2 with eight on the pitch, so instead
+ * the two players exchange slots and both shifts keep their nine.
+ *
+ * The guard that matters is duplication. If the player being dragged already
+ * appears somewhere in the destination shift, the trade would field them twice
+ * in the same seven minutes, so it is refused with a reason rather than
+ * silently producing an impossible lineup.
+ *
+ * @returns {{ lineup, ok, reason? }} — `lineup` is unchanged when `ok` is false
+ */
+export function applyMatrixSwap(lineup, from, to, nameOf = {}) {
+  const a = lineup?.[from.shift]?.[from.posId] || null;
+  const b = lineup?.[to.shift]?.[to.posId] || null;
+
+  if (from.shift === to.shift && from.posId === to.posId) return { lineup, ok: false };
+  if (!a) return { lineup, ok: false, reason: 'nothing to move' };
+
+  // Same shift: the existing swap already trades the two cleanly.
+  if (from.shift === to.shift) {
+    return { lineup: applySwap(lineup, to.shift, to.posId, a), ok: true };
+  }
+
+  // Across shifts, an empty destination would change how many players each
+  // shift fields, so only a genuine two-way trade is allowed.
+  if (!b) {
+    return { lineup, ok: false, reason: 'drop onto a player, not an empty slot, to move between shifts' };
+  }
+
+  const appearsIn = (shiftIndex, id) => POSITION_IDS.some((p) => lineup[shiftIndex][p] === id);
+  if (appearsIn(to.shift, a)) {
+    return { lineup, ok: false, reason: `${nameOf[a] || 'that player'} already plays shift ${to.shift + 1}` };
+  }
+  if (appearsIn(from.shift, b)) {
+    return { lineup, ok: false, reason: `${nameOf[b] || 'that player'} already plays shift ${from.shift + 1}` };
+  }
+
+  const next = lineup.map((shift) => ({ ...shift }));
+  next[to.shift][to.posId] = a;
+  next[from.shift][from.posId] = b;
+  return { lineup: next, ok: true };
+}
+
+/**
  * Manual override. Putting `playerId` into `positionId` on `shiftIndex`:
  *   - if that player is already somewhere else in the same shift, the two
  *     players trade places (a true swap, never a duplicate);

@@ -1,10 +1,89 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { POSITIONS, SHIFTS_PER_HALF, TOTAL_SHIFTS } from '../lib/constants.js';
-import { computeGameStats } from '../lib/lineup.js';
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { computeGameStats, applyMatrixSwap } from '../lib/lineup.js';
+import { buzz } from '../lib/haptics.js';
 import { renderLineupImage, lineupAsText } from '../lib/exportLineup.js';
 import { prettyDate, todayISO } from '../lib/format.js';
 import { Button, Card, SectionLabel } from './ui.jsx';
 import SwapModal from './SwapModal.jsx';
+
+/**
+ * One grid cell: tap to open the swap sheet, press and hold to drag.
+ *
+ * Both roles on the same element — a cell is a handle to pick a player up and
+ * a place to drop one. Tapping still opens the sheet, because the sensors only
+ * start a drag after 8px of mouse travel or a 220ms hold, so a quick tap never
+ * looks like a drag.
+ */
+function MatrixCell({
+  shiftIndex,
+  posId,
+  playerId,
+  name,
+  offPref,
+  isLive,
+  dragging,
+  illegal,
+  onOpen,
+}) {
+  const id = `cell:${shiftIndex}:${posId}`;
+  const { setNodeRef: dropRef, isOver } = useDroppable({ id });
+  const {
+    setNodeRef: dragRef,
+    attributes,
+    listeners,
+    isDragging,
+  } = useDraggable({ id, disabled: !playerId });
+
+  const ref = (node) => {
+    dropRef(node);
+    dragRef(node);
+  };
+
+  return (
+    <button
+      ref={ref}
+      {...attributes}
+      {...listeners}
+      onClick={onOpen}
+      style={{ touchAction: 'manipulation' }}
+      className={`relative flex min-h-[48px] w-full select-none items-center justify-center rounded-lg border px-0.5 text-center text-[11px] font-black uppercase leading-tight tracking-tight transition-colors ${
+        !playerId
+          ? 'border-dashed border-slate-700 bg-slate-900/50 text-slate-600'
+          : posId === 'GK'
+            ? 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200'
+            : isLive
+              ? 'border-lime-500/40 bg-lime-500/10 text-white'
+              : 'border-slate-700 bg-slate-800 text-slate-100'
+      } ${
+        isOver && !isDragging
+          ? illegal
+            ? 'ring-2 ring-red-500 ring-offset-1 ring-offset-slate-950'
+            : 'ring-2 ring-lime-400 ring-offset-1 ring-offset-slate-950'
+          : ''
+      } ${isDragging ? 'opacity-30' : ''} ${
+        dragging && !isDragging && playerId && !illegal ? 'border-lime-500/40' : ''
+      } ${dragging && illegal ? 'opacity-40' : ''}`}
+    >
+      <span className="truncate">{name || '+'}</span>
+      {offPref && (
+        <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
+      )}
+    </button>
+  );
+}
 
 /**
  * VIEW C — Master matrix (8 shifts x 9 positions) with manual override.
@@ -18,9 +97,43 @@ export default function MatrixView({
   liveShiftIndex,
   opponent = '',
   onNotify,
+  onMatrixDrag,
 }) {
   const [half, setHalf] = useState(liveShiftIndex >= SHIFTS_PER_HALF ? 2 : 1);
   const [cell, setCell] = useState(null); // { shiftIndex, positionId }
+  const [activeCell, setActiveCell] = useState(null);
+
+  // Same configuration as the pitch, for the same reason: the matrix sits on a
+  // scrolling page, so a finger has to hold before it picks anything up.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  const parseCell = (raw) => {
+    const [, shift, posId] = String(raw).split(':');
+    return { shift: Number(shift), posId };
+  };
+
+  /**
+   * Can the player currently in hand actually land here? Worked out during the
+   * drag so an impossible target is dimmed and ringed red rather than ringed
+   * green and then refused on release — telling someone "yes" and then "no"
+   * reads as a broken gesture, not a rule.
+   */
+  const canDropOn = (shift, posId) => {
+    if (!activeCell) return true;
+    if (activeCell.shift === shift && activeCell.posId === posId) return true;
+    return applyMatrixSwap(lineup, activeCell, { shift, posId }, nameOf).ok;
+  };
+
+  const handleDragEnd = ({ active, over }) => {
+    setActiveCell(null);
+    if (!over || active.id === over.id) return;
+    buzz([12, 40, 18]);
+    onMatrixDrag(parseCell(active.id), parseCell(over.id));
+  };
 
   const present = useMemo(() => roster.filter((p) => p.isPresent), [roster]);
   const nameOf = useMemo(() => Object.fromEntries(roster.map((p) => [p.id, p.name])), [roster]);
@@ -140,6 +253,16 @@ export default function MatrixView({
         ))}
       </div>
 
+      <DndContext
+        sensors={sensors}
+        collisionDetection={pointerWithin}
+        onDragStart={({ active }) => {
+          setActiveCell(parseCell(active.id));
+          buzz(18);
+        }}
+        onDragCancel={() => setActiveCell(null)}
+        onDragEnd={handleDragEnd}
+      >
       <Card className="overflow-hidden">
         <table className="w-full table-fixed border-collapse">
           <thead>
@@ -177,23 +300,17 @@ export default function MatrixView({
                     pid && pos.id !== 'GK' && prefs.length > 0 && !prefs.includes(pos.group);
                   return (
                     <td key={s} className="p-0.5">
-                      <button
-                        onClick={() => setCell({ shiftIndex: s, positionId: pos.id })}
-                        className={`relative flex min-h-[48px] w-full items-center justify-center rounded-lg border px-0.5 text-center text-[11px] font-black uppercase leading-tight tracking-tight transition-colors ${
-                          !pid
-                            ? 'border-dashed border-slate-700 bg-slate-900/50 text-slate-600'
-                            : pos.id === 'GK'
-                              ? 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200'
-                              : s === liveShiftIndex
-                                ? 'border-lime-500/40 bg-lime-500/10 text-white'
-                                : 'border-slate-700 bg-slate-800 text-slate-100'
-                        }`}
-                      >
-                        <span className="truncate">{pid ? nameOf[pid] : '+'}</span>
-                        {offPref && (
-                          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
-                        )}
-                      </button>
+                      <MatrixCell
+                        shiftIndex={s}
+                        posId={pos.id}
+                        playerId={pid}
+                        name={pid ? nameOf[pid] : null}
+                        offPref={offPref}
+                        isLive={s === liveShiftIndex}
+                        dragging={!!activeCell}
+                        illegal={!!activeCell && !canDropOn(s, pos.id)}
+                        onOpen={() => setCell({ shiftIndex: s, positionId: pos.id })}
+                      />
                     </td>
                   );
                 })}
@@ -203,9 +320,20 @@ export default function MatrixView({
         </table>
       </Card>
 
-      <p className="px-1 text-xs text-slate-500">
-        Tap any cell to swap. <span className="text-amber-400">●</span> means the player is outside
-        their preferred line.
+      {/* Floats above the grid, so lifting a player never reflows the table. */}
+      <DragOverlay dropAnimation={null}>
+        {activeCell ? (
+          <div className="pointer-events-none rounded-lg border-2 border-lime-400 bg-slate-900 px-3 py-2 text-xs font-black uppercase tracking-tight text-white shadow-2xl shadow-black/60">
+            {nameOf[lineup?.[activeCell.shift]?.[activeCell.posId]] || ''}
+          </div>
+        ) : null}
+      </DragOverlay>
+      </DndContext>
+
+      <p className="px-1 text-xs leading-relaxed text-slate-500">
+        Tap a cell to swap from a list, or press and hold to drag one player onto another — across
+        shifts as well as positions. <span className="text-amber-400">●</span> means the player is
+        outside their preferred line.
       </p>
 
       {/* Live equity read-out so an override that breaks fairness is obvious */}

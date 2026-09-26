@@ -394,8 +394,19 @@ released over the page header still swapped the player with whoever was closest
 Editing the live shift re-derives the whole next-shift panel, so a bench player
 dragged on moves from "Going On" to "Staying On" with their new position.
 
-Tap-to-swap on the Matrix is unchanged. Drag is an addition for the touchline,
-not a replacement for the precise editor.
+**The Matrix is draggable too**, with the same sensors, and it can do something
+the pitch cannot: drag *across shifts*. Within one shift it is the ordinary
+swap; across shifts the two players **trade** rather than move, because moving
+one would leave the source shift fielding eight. A drag is refused when the
+player already appears in the destination shift — that would field them twice
+in the same seven minutes — and refusals are reported with a reason.
+
+Legality is computed *during* the drag, not on release: impossible targets dim
+and ring red while legal ones stay bright, so a coach can see where a player can
+go rather than being told "no" after letting go.
+
+Tapping a cell still opens the swap sheet on both views. Drag is an addition for
+the touchline, not a replacement for the precise editor.
 
 ---
 
