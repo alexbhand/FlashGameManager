@@ -3,7 +3,9 @@
 A handoff document. Written to be pasted whole into a fresh session so work can
 resume without re-deriving anything.
 
-**Status:** feature freeze. Stabilisation only unless the owner lifts it.
+**Status:** active development. The freeze declared during the audits was lifted
+by the owner and several features shipped after it; treat the invariants in
+§12 as frozen, not the feature set.
 **Live:** https://alexbhand.github.io/FlashGameManager/
 **Repo:** https://github.com/alexbhand/FlashGameManager (public)
 **Local:** `/Users/handelsmanhome/Documents/Claude/Flash Game Mgr`
@@ -142,6 +144,8 @@ Output is `lineup[shiftIndex][positionId] = playerId`, 8 × 9.
 
 ### Priority order — this is the contract
 
+0. **Nobody who turned up plays nothing** — the only rule that outranks equity,
+   and it runs as a repair after planning, never inside it (see §15 bug 14)
 1. **Equity** — untouchable
 2. **Nobody sits twice running** — hard constraint
 3. **Goalkeeper rules** — block shape, kit changes, field-time floors
@@ -475,6 +479,9 @@ Reproduce with the harnesses in `test/`.
   time unchanged and weaker players averaging *slightly more* minutes.
 - **Volunteer keepers** spend 7% of outfield shifts at the back vs 38% for an
   ordinary outfielder; 0% when they have only two outfield shifts.
+- **Late arrivals never disturb the pitch** — 210 arrivals taken at every point
+  in a game: 0 changed the shift already being played, 0 left the arrival with
+  no shifts, 0 duplicated a player (`test/arrivals.mjs`).
 - **Performance:** clock costs 1 DOM write/sec and 0 on the pitch subtree; no
   long tasks over 5 seconds; drags survive clock ticks mid-gesture.
 
@@ -576,6 +583,27 @@ Each of these was shipped, then caught. They are the regression surface.
     Reset Game clears them, Setup shows a part-game window in amber with a
     one-tap "everyone here for the whole game", and the generator now names
     anyone present who finishes with nothing. `test/zeroshift.mjs` guards it.
+14. **Tapping "arrived" re-planned the shift already on the pitch.** Reported
+    from a real game: the coach had read out the opening nine and sent them to
+    their spots, then a boy turned up before kick‑off, and the tap moved eight
+    of the nine — everyone had to be called back. The cause was `replanFrom`,
+    which is `globalShift` while the clock says `pregame`, being used as the
+    arrival's start shift. **The clock not having started does not mean nobody
+    is standing on the pitch.** Arrivals now use their own `arriveFrom =
+    globalShift + 1`, always the shift *after* the one out there. A coach who
+    genuinely wants the newcomer in the opening nine ticks them present on
+    Setup instead, which re-plans the whole game by design.
+    Fixing that exposed a second, older fault underneath it: equity is a rate,
+    so a boy arriving with one shift left is owed 0.6 of it while everyone else
+    is still owed 0.8 — he lost every slot on the merits and played nothing
+    (30/30 seeds, and identical before the change). A repair pass at the end of
+    `generateLineup` now hands any available player on zero a single shift,
+    taken from whoever is furthest past their own share, never cutting anyone
+    else to zero, and says so in a warning. `test/arrivals.mjs` guards both.
+
+    *Consequence worth knowing:* the rule is uniform, so an arrival logged
+    during the half‑time interval joins shift 6 rather than 5. Exempting the
+    interval is a one‑line change if that turns out to be wrong at the field.
 
 ---
 
@@ -587,6 +615,7 @@ Each of these was shipped, then caught. They are the regression surface.
 | Anything in position assignment | that it cannot affect the WHO stage |
 | Anything rendering in a scrolling list | measure layout drift before/after a tap |
 | A rebuild path | that it starts from `replanFrom`, never 0 |
+| An arrival path | that it starts from `arriveFrom` (= `replanFrom` + 1 pre‑kickoff), and run `test/arrivals.mjs` — the shift on the pitch is sacred even before the clock starts |
 | A new persisted field | add it to `persistence.js` *and* `planSignature` |
 | Anything touching `arriveShift` / `departShift` | run `test/zeroshift.mjs`; a present player with no shifts is the worst bug this app can have |
 | `exportLineup.js` or the roster size | re-render the card at 13 *and* 16 present and look at it — the resting row is the part that overflows |

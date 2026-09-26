@@ -16,6 +16,9 @@ node balance.mjs      # competitive balance, with and without ratings
 node keeperperk.mjs   # volunteer-keeper defensive share
 node edges.mjs        # attendance 0-16, goalie volunteers 0-16
 node variety.mjs      # per-player position spread, one readable game
+node zeroshift.mjs    # nobody present finishes a game with no shifts
+node matrixdrag.mjs   # fuzzed matrix drags, invariants after every swap
+node arrivals.mjs     # a late arrival never disturbs the shift on the pitch
 ```
 
 Run the lot after any change to `src/lib/lineup.js` or `src/lib/constants.js`.

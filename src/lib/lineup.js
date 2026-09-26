@@ -898,6 +898,60 @@ export function generateLineup(players, opts = {}) {
     );
   }
 
+  /**
+   * NOBODY WHO TURNED UP GOES HOME WITH NOTHING.
+   *
+   * Equity here is a rate, which is what makes late arrivals behave sensibly
+   * everywhere else — but it has one indefensible edge. A boy who walks up
+   * with a single shift left is owed about 0.6 of it, while everyone who has
+   * been here all game is still owed 0.8, so he loses the slot on the merits
+   * and goes home having never played. Arithmetically correct; impossible to
+   * explain to a nine‑year‑old.
+   *
+   * So where the plan leaves an available player on zero, give him one shift
+   * and take it from whoever is furthest PAST their own share. This is the
+   * only rule in this file that outranks urgency, and it runs dead last on
+   * purpose: it corrects a finished plan instead of competing inside it, so it
+   * cannot distort anybody else's allocation. Nobody is ever cut to zero to
+   * pay for it, and shifts already on the pitch are still untouchable.
+   */
+  const shiftsOf = (id) =>
+    lineup.reduce((n, sh) => n + (POSITION_IDS.some((k) => sh[k] === id) ? 1 : 0), 0);
+  const rescued = [];
+
+  roster.forEach((p) => {
+    if (shiftsOf(p.id) > 0) return;
+
+    let best = null;
+    for (let s = Math.max(fromShift, 0); s < TOTAL_SHIFTS; s += 1) {
+      if (!isAvailableAt(p, s)) continue;
+      POSITION_IDS.forEach((posId) => {
+        if (posId === 'GK') return; // the keeper block is Stage 1's, not ours
+        const occ = lineup[s][posId];
+        if (!occ || shiftsOf(occ) <= 1) return; // never rob someone down to nothing
+        const surplus = shiftsOf(occ) - (targets[occ] || 0);
+        const preferred = (byId[p.id]?.preferredPositions || []).includes(posId) ? 1 : 0;
+        if (!best || surplus > best.surplus + 1e-9 ||
+            (Math.abs(surplus - best.surplus) < 1e-9 && preferred > best.preferred)) {
+          best = { shift: s, posId, occ, surplus, preferred };
+        }
+      });
+    }
+
+    if (!best) return; // genuinely no room — the warning below names him
+
+    lineup[best.shift][best.posId] = p.id;
+    repairLineBalance(lineup[best.shift], byId);
+    rescued.push(`${p.name} takes shift ${best.shift + 1} from ${byId[best.occ]?.name || 'a teammate'}`);
+  });
+
+  if (rescued.length) {
+    warnings.push(
+      `${rescued.join('; ')} — they arrived too late to earn a shift on the ` +
+        `rotation, and nobody who turned up sits out the whole game.`
+    );
+  }
+
   // Last line of defence on the one promise this app makes. If anybody marked
   // present finished with nothing, say so by name rather than letting a coach
   // discover it at full time.

@@ -255,6 +255,24 @@ export default function App() {
       : Math.min(globalShift + 1, TOTAL_SHIFTS);
 
   /**
+   * Where a LATE ARRIVAL joins — always the shift after the one on the pitch,
+   * never the one on it.
+   *
+   * `replanFrom` allows the current shift while a half is still `pregame`,
+   * which is right for a rebuild but wrong for an arrival. Before kick-off the
+   * coach has already read the opening nine out and sent them to their spots;
+   * slotting a latecomer into shift 1 re-planned it and moved eight of the
+   * nine, so everyone had to be called back. The clock not having started does
+   * not mean nobody is standing on the pitch.
+   *
+   * Same reasoning at half time, where shift 5 is already showing as "on the
+   * field now". Someone who genuinely turned up early enough to be in the
+   * opening lineup is marked present on Setup instead, which re-plans the whole
+   * game as it should.
+   */
+  const arriveFrom = Math.min(globalShift + 1, TOTAL_SHIFTS);
+
+  /**
    * "Build" / "Regenerate" / the Live tab's rebuild nudge all come through
    * here. Mid-game this re-plans only the shifts still to come; before
    * kickoff `replanFrom` is 0, so it is a clean full build. Rebuilding from
@@ -265,22 +283,38 @@ export default function App() {
 
   /** Apply an availability change, then re-plan the untouched shifts. */
   const applyAvailability = useCallback(
-    (playerId, patch) => {
+    (playerId, patch, fromShift = replanFrom) => {
       const next = roster.map((p) => (p.id === playerId ? { ...p, ...patch } : p));
       setRoster(next);
-      if (replanFrom < TOTAL_SHIFTS) buildLineup(replanFrom, next, { reshuffle: false });
+      if (fromShift < TOTAL_SHIFTS) buildLineup(fromShift, next, { reshuffle: false });
     },
     [roster, replanFrom, setRoster, buildLineup]
   );
 
   const handleArrive = useCallback(
-    (playerId) =>
-      applyAvailability(playerId, {
-        isPresent: true,
-        arriveShift: replanFrom,
-        departShift: null,
-      }),
-    [applyAvailability, replanFrom]
+    (playerId) => {
+      const name = roster.find((p) => p.id === playerId)?.name || 'They';
+      if (arriveFrom >= TOTAL_SHIFTS) {
+        // The last shift is already out there; there is nothing left to join.
+        setToast({
+          id: Date.now(),
+          title: `${name} is here`,
+          detail: 'Last shift is already on — no shifts left to add them to',
+        });
+        return;
+      }
+      applyAvailability(
+        playerId,
+        { isPresent: true, arriveShift: arriveFrom, departShift: null },
+        arriveFrom
+      );
+      setToast({
+        id: Date.now(),
+        title: `${name} joins from shift ${arriveFrom + 1}`,
+        detail: `Shift ${arriveFrom} stays exactly as it is`,
+      });
+    },
+    [roster, applyAvailability, arriveFrom]
   );
 
   const handleDepart = useCallback(
@@ -674,7 +708,8 @@ export default function App() {
       <RosterChangeSheet
         open={rosterSheetOpen}
         roster={roster}
-        fromShift={replanFrom}
+        arriveFrom={arriveFrom}
+        departFrom={replanFrom}
         onArrive={handleArrive}
         onDepart={handleDepart}
         onUndo={handleUndoAvailability}

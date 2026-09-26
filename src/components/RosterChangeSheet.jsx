@@ -4,6 +4,11 @@ import { availabilityLabel, isAvailableAt } from '../lib/lineup.js';
 import { Banner, Button, Card } from './ui.jsx';
 
 /**
+ * `arriveFrom` is the zero-based index of the shift an arrival joins, which
+ * makes it the one-based NUMBER of the shift currently on the pitch — the one
+ * this sheet promises not to touch. Worth stating, because the off-by-one
+ * reads like a mistake otherwise.
+ *
  * Mid-game roster changes — the edge case that happens most weeks.
  * A kid turns up at half time, or picks up a knock and is done for the day.
  * Either way we re-plan only the shifts that have NOT been played yet.
@@ -11,7 +16,8 @@ import { Banner, Button, Card } from './ui.jsx';
 export default function RosterChangeSheet({
   open,
   roster,
-  fromShift,
+  arriveFrom,
+  departFrom,
   onArrive,
   onDepart,
   onUndo,
@@ -22,10 +28,10 @@ export default function RosterChangeSheet({
     const away = [];
     roster.forEach((p) => {
       // "Here now" means available for the shift we would re-plan from.
-      (isAvailableAt(p, Math.min(fromShift, TOTAL_SHIFTS - 1)) ? here : away).push(p);
+      (isAvailableAt(p, Math.min(departFrom, TOTAL_SHIFTS - 1)) ? here : away).push(p);
     });
     return { hereNow: here, notHere: away };
-  }, [roster, fromShift]);
+  }, [roster, departFrom]);
 
   if (!open) return null;
 
@@ -64,7 +70,7 @@ export default function RosterChangeSheet({
             <div className="min-w-0">
               <p className="text-xl font-black uppercase tracking-tight text-white">Roster Change</p>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Re-plans from shift {Math.min(fromShift + 1, TOTAL_SHIFTS)} onward
+                Keeps shift {arriveFrom} as it is
               </p>
             </div>
             <Button variant="outline" className="min-h-[48px] shrink-0 px-4 text-xs" onClick={onClose}>
@@ -75,8 +81,10 @@ export default function RosterChangeSheet({
 
         <div className="space-y-4 px-4 pt-4">
           <Banner tone="slate">
-            Shifts already played are kept exactly as they were. A late arrival gets a fair share of
-            what is <em>left</em> — not a full game squeezed into the rest.
+            The shift on the pitch is never touched. An arrival joins from shift{' '}
+            {Math.min(arriveFrom + 1, TOTAL_SHIFTS)} and gets a fair share of what is <em>left</em>,
+            rather than a full game squeezed into the rest. Someone who turned up in time for the
+            opening lineup should be ticked present on Setup instead.
           </Banner>
 
           <section>
@@ -103,7 +111,13 @@ export default function RosterChangeSheet({
               </p>
               <div className="space-y-2">
                 {notHere.map((p) => (
-                  <Row key={p.id} player={p} action={onArrive} actionLabel="Just arrived" tone="primary" />
+                  <Row
+                    key={p.id}
+                    player={p}
+                    action={onArrive}
+                    actionLabel={`Joins shift ${Math.min(arriveFrom + 1, TOTAL_SHIFTS)}`}
+                    tone="primary"
+                  />
                 ))}
               </div>
             </section>
