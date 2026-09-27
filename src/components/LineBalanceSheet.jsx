@@ -55,7 +55,7 @@ export default function LineBalanceSheet({ open, roster, onRate, onResetAll, onC
                 Line Balance
               </p>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Who lines up alongside whom
+                Who lines up alongside whom · used next time you regenerate
               </p>
             </div>
             <Button variant="outline" className="min-h-[48px] shrink-0 px-4 text-xs" onClick={onClose}>

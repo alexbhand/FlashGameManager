@@ -1126,6 +1126,12 @@ export function applySwap(lineup, shiftIndex, positionId, playerId) {
  * no rebuild, and the original keeper pairing silently stood. Comparing the
  * generated output instead would have been wrong the other way, flagging every
  * deliberate manual swap on the Matrix as "out of date".
+ *
+ * Line Balance ratings are deliberately NOT in it. They are season-long tuning,
+ * not a game-day choice, and while they were in here one idle tap on a rating
+ * before kick-off counted as "stale", fired the automatic rebuild, and quietly
+ * threw away every edit the coach had made by hand. A rating now takes effect
+ * the next time the lineup is built or regenerated.
  */
 export function planSignature(players, opts = {}) {
   const { singleKeeperBothHalves = false, firstHalfKeeperId = null } = opts;
@@ -1134,7 +1140,7 @@ export function planSignature(players, opts = {}) {
     .map(
       (p) =>
         `${p.id}:${p.arriveShift || 0}:${p.departShift == null ? 'x' : p.departShift}:` +
-        `${p.wantsGoalieToday ? 'gk' : '-'}:${p.offense || 'Steady'}/${p.defense || 'Steady'}`
+        `${p.wantsGoalieToday ? 'gk' : '-'}`
     )
     .sort();
   return `${singleKeeperBothHalves ? 'both' : 'one'}|${firstHalfKeeperId || '-'}|${parts.join(',')}`;

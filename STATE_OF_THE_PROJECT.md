@@ -331,9 +331,15 @@ These are invariants. Breaking one is a bug.
    looked like goalie selection being broken.
 
 4. **Staleness compares inputs, not output.** `planSignature` fingerprints
-   attendance, arrival/departure, goalie ticks, ratings and the both-halves
-   answer. Comparing generated lineups instead would flag every deliberate
-   manual override as out of date.
+   attendance, arrival/departure, goalie ticks, the keeper-half pick and the
+   both-halves answer. Comparing generated lineups instead would flag every
+   deliberate manual override as out of date. **Ratings are deliberately left
+   out** (bug 17): they are season-long, and take effect on the next
+   Regenerate.
+
+   Hand edits are recorded as `lineupMeta.editedShifts`. A rebuild that
+   re-plans any of those shifts must say so ("Hand edits replaced"); edits in
+   shifts before the rebuild point are history and carry over.
 
 5. **Before kickoff the lineup rebuilds itself**; once the clock starts it asks
    first. Silently re-planning mid-game would pull players off the pitch the
@@ -355,7 +361,7 @@ These are invariants. Breaking one is a bug.
 |---|---|
 | `flash.roster.v1` | names, attendance, preferences, goalie opt-in, ratings, availability |
 | `flash.lineup.v1` | the 8 × 9 matrix including manual overrides |
-| `flash.lineupMeta.v1` | `planSignature` of the inputs the lineup was built from |
+| `flash.lineupMeta.v1` | `planSignature` of the inputs the lineup was built from, `builtAt`, and `editedShifts` (shifts the coach changed by hand) |
 | `flash.gameState.v1` | clock |
 | `flash.completedGames.v1` | season history |
 | `flash.settings.v1` | opponent, seed, both-halves answer, first-half keeper pick |
@@ -505,6 +511,13 @@ only builds. Browser behaviour was verified by driving the running app
 
 **Data lives on one device.** Phone and laptop keep entirely separate season
 histories and never sync. Clearing site data wipes the season. Pick one device.
+On iOS the home-screen app and a Safari tab count as separate devices too.
+
+**Two open copies overwrite each other.** There is no `storage` event listener,
+so two tabs of the app each hold their own state and the last one to write
+wins. Found in the pre-game audit and deliberately left: the owner runs a
+single copy. If that changes, the fix is a `storage` listener in
+`useLocalStorage` that re-reads the key through its validator.
 
 **Roster is hardcoded.** `ROSTER_NAMES` in `constants.js`, and `validateRoster`
 re-adds any missing name on read. A player joining or leaving mid-season cannot
@@ -604,6 +617,32 @@ Each of these was shipped, then caught. They are the regression surface.
     *Consequence worth knowing:* the rule is uniform, so an arrival logged
     during the half‑time interval joins shift 6 rather than 5. Exempting the
     interval is a one‑line change if that turns out to be wrong at the field.
+15. **An unfinished game blocked the next one's Setup, silently.** Close the app
+    without tapping Save and the clock stays off `pregame`: the Setup
+    auto-rebuild switched itself off, and with every shift already history
+    Regenerate re-planned nothing while toasting "Rest of game re-planned".
+    A child marked absent the next morning stayed in all four of their shifts.
+    Setup now opens with a banner for any game that reached full time unsaved,
+    was planned on an earlier day, or whose half clock has run past 45 minutes,
+    offering Save to Season (full time only) or Start New Game; any other game
+    in progress gets a quiet note naming the shift Setup changes apply from.
+    Regenerate refuses, and says why, when there is nothing left to re-plan.
+16. **Undo after a shift change restarted or froze the clock.** It restored the
+    whole clock snapshot, so pausing for an injury between the sub and the undo
+    restarted the clock with the stoppage counted — and the reverse froze it
+    while play carried on. Undo now puts back `shiftInHalf` and nothing else.
+17. **A rating tap before kick-off wiped hand edits.** Ratings were in
+    `planSignature`, so changing one counted as stale and fired the automatic
+    full rebuild; the only feedback was "Lineup updated". Mid-game, an arrival
+    replaced 186 of 200 hand edits to later shifts, and the arrival toast
+    overwrote the rebuild's in the same tick. Ratings are out of the signature,
+    edits are tracked, and every rebuild that replaces one says so — including
+    the arrival toast, which carries the warning itself.
+18. **Hand edits could get round the zero-shift guarantee.** The "no shifts"
+    warning was produced only at build time, so swapping a late arrival out of
+    their one shift left them on zero with no banner. `App.jsx` now derives it
+    from the lineup as it stands on every change and replaces the build-time
+    copy, so the two can never disagree.
 
 ---
 
@@ -616,7 +655,10 @@ Each of these was shipped, then caught. They are the regression surface.
 | Anything rendering in a scrolling list | measure layout drift before/after a tap |
 | A rebuild path | that it starts from `replanFrom`, never 0 |
 | An arrival path | that it starts from `arriveFrom` (= `replanFrom` + 1 pre‑kickoff), and run `test/arrivals.mjs` — the shift on the pitch is sacred even before the clock starts |
-| A new persisted field | add it to `persistence.js` *and* `planSignature` |
+| A new persisted field | add it to `persistence.js`, and to `planSignature` only if it is a game-day choice — a season-long setting in there wipes hand edits (bug 17) |
+| Anything that edits the lineup by hand | call `markEdited(shift…)` so a later rebuild can say what it replaced |
+| A handler that sets its own toast after a rebuild | it overwrites the rebuild's toast — carry `editsReplaced` into it (see `handleArrive`) |
+| The clock or its undo | undo restores `shiftInHalf` only; never write back `running`/`startedAt` from a snapshot |
 | Anything touching `arriveShift` / `departShift` | run `test/zeroshift.mjs`; a present player with no shifts is the worst bug this app can have |
 | `exportLineup.js` or the roster size | re-render the card at 13 *and* 16 present and look at it — the resting row is the part that overflows |
 | Anything touching `navigator.share` | the call must stay synchronous inside the tap; pre-render, never `await` first |

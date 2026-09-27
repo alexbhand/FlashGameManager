@@ -21,6 +21,13 @@ export default function PreGameSetup({
   onClearAvailability,
   keeperHalves = null,
   onSwapKeeperHalves,
+  leftoverGame = false,
+  gameUnderWay = false,
+  replanFrom = 0,
+  lastBuiltAt = null,
+  canSaveLeftover = false,
+  onSaveLeftover,
+  onStartOver,
 }) {
   const present = useMemo(() => roster.filter((p) => p.isPresent), [roster]);
   const keepers = useMemo(() => present.filter((p) => p.wantsGoalieToday), [present]);
@@ -63,8 +70,47 @@ export default function PreGameSetup({
   const setAllPresent = (value) =>
     setRoster((prev) => prev.map((p) => ({ ...p, isPresent: value })));
 
+  const builtOn = lastBuiltAt
+    ? new Date(lastBuiltAt).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+    : null;
+
   return (
     <div className="space-y-4">
+      {/*
+        A game that was never closed switches off everything this screen
+        promises: attendance and goalie ticks stop reaching the lineup, and a
+        finished game leaves Regenerate nothing to re-plan. Say so at the top,
+        before a single box is ticked, and offer the way out right here.
+      */}
+      {leftoverGame && (
+        <div className="rounded-2xl border-2 border-amber-500/70 bg-amber-500/10 p-4">
+          <p className="text-base font-black uppercase tracking-tight text-amber-300">
+            {canSaveLeftover ? 'Last game was never saved' : 'A game is still open'}
+          </p>
+          <p className="mt-1 text-sm font-semibold text-amber-100/90">
+            {builtOn ? `Planned ${builtOn}. ` : ''}
+            Nothing you change here reaches the lineup until it is closed.
+          </p>
+          <div className="mt-3 flex gap-2">
+            {canSaveLeftover && (
+              <Button variant="primary" className="flex-1 text-sm" onClick={onSaveLeftover}>
+                Save to Season
+              </Button>
+            )}
+            <Button variant="outline" className="flex-1 text-sm" onClick={onStartOver}>
+              {canSaveLeftover ? 'Discard' : 'Start New Game'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!leftoverGame && gameUnderWay && (
+        <Banner tone="slate">
+          Game under way — changes here apply from shift {Math.min(replanFrom + 1, TOTAL_SHIFTS)}.
+          To start fresh, use Reset Game on the Live tab.
+        </Banner>
+      )}
+
       {/* --- Today's numbers -------------------------------------------------- */}
       <Card className="p-4">
         <SectionLabel right={`${POSITIONS.length} on the field · 8 shifts`}>Today</SectionLabel>

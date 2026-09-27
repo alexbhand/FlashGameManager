@@ -194,7 +194,11 @@ export function validateSettings(saved, initial) {
 
 export function validateMeta(saved) {
   try {
-    return isObj(saved) && typeof saved.signature === 'string' ? saved : null;
+    if (!isObj(saved) || typeof saved.signature !== 'string') return null;
+    const edited = Array.isArray(saved.editedShifts)
+      ? saved.editedShifts.filter((n) => Number.isInteger(n) && n >= 0 && n < TOTAL_SHIFTS)
+      : [];
+    return { ...saved, editedShifts: edited };
   } catch {
     return null;
   }

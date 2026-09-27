@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  HALF_MS,
   SHIFTS_PER_HALF,
   SHIFT_MS,
   STORAGE_KEYS,
@@ -165,6 +166,21 @@ export default function App() {
     return acc;
   }, [games]);
 
+  /**
+   * Remember which shifts the coach has edited by hand. A rebuild has to
+   * re-plan the shifts still to come, and that replaces hand edits in them —
+   * but it must SAY so. Before this, an arrival or an attendance tick quietly
+   * put back every player the coach had moved, and the only word of it was
+   * "Lineup updated", which is exactly what a tap that changed nothing says.
+   */
+  const markEdited = useCallback(
+    (...shifts) =>
+      setLineupMeta((m) =>
+        m ? { ...m, editedShifts: [...new Set([...(m.editedShifts || []), ...shifts])] } : m
+      ),
+    [setLineupMeta]
+  );
+
   // --- Lineup actions -------------------------------------------------------
   /**
    * Build the plan. `fromShift > 0` re-plans only the tail of the game, so
@@ -187,6 +203,10 @@ export default function App() {
         fromShift,
         baseLineup: fromShift > 0 ? lineup : null,
       });
+      // Hand edits in shifts before `fromShift` are history and survive; any at
+      // or after it have just been re-planned away.
+      const edited = lineupMeta?.editedShifts || [];
+      const editsReplaced = edited.some((s) => s >= fromShift);
       setLineup(result.lineup);
       setWarnings(result.warnings);
       setSettings((s) => ({ ...s, seed }));
@@ -196,6 +216,7 @@ export default function App() {
           firstHalfKeeperId: settings.firstHalfKeeperId,
         }),
         builtAt: Date.now(),
+        editedShifts: edited.filter((s) => s < fromShift),
       });
 
       // Say so. A tap that silently changes something off-screen is
@@ -205,17 +226,22 @@ export default function App() {
       const keepers = here.filter((p) => p.wantsGoalieToday).length;
       setToast({
         id: Date.now(),
-        title: fromShift > 0 ? 'Rest of game re-planned' : reshuffle ? 'New lineup built' : 'Lineup updated',
+        title: editsReplaced
+          ? 'Hand edits replaced'
+          : fromShift > 0 ? 'Rest of game re-planned' : reshuffle ? 'New lineup built' : 'Lineup updated',
         detail:
+          (editsReplaced ? 'Re-planned · ' : '') +
           `${here.length} playing · ` +
           (keepers ? `${keepers} in goal` : 'no goalie picked') +
           (fromShift > 0 ? ` · from shift ${fromShift + 1}` : ''),
       });
       buzz();
+      return { editsReplaced };
     },
     [
       roster,
       lineup,
+      lineupMeta,
       settings.seed,
       settings.singleKeeperBothHalves,
       settings.firstHalfKeeperId,
@@ -236,6 +262,21 @@ export default function App() {
     clock.shiftInHalf === 0 &&
     clock.accumulated === 0 &&
     !clock.running;
+
+  /**
+   * A game that was never closed. Tomorrow's Setup is useless until it is:
+   * with the clock off `pregame` the automatic rebuild is switched off, and a
+   * finished game leaves nothing to re-plan at all — so marking a child absent
+   * left him in the lineup while Regenerate reported success. Three signals,
+   * any one enough: the game reached full time without being saved, the plan
+   * was built on an earlier day, or the half clock has run far past a half.
+   */
+  const leftoverGame =
+    clock.status === 'final' ||
+    (!gameNotStarted &&
+      lineupMeta?.builtAt != null &&
+      new Date(lineupMeta.builtAt).toDateString() !== new Date().toDateString()) ||
+    elapsed > HALF_MS * 1.5;
 
   /**
    * The first shift we are allowed to re-plan. Shifts already played are
@@ -279,14 +320,27 @@ export default function App() {
    * scratch mid-game used to rewrite the half that had already been played,
    * which quietly falsified the season stats saved at full time.
    */
-  const handleGenerate = useCallback(() => buildLineup(replanFrom), [buildLineup, replanFrom]);
+  const handleGenerate = useCallback(() => {
+    // Every shift is history — there is nothing left to re-plan. Reporting
+    // "re-planned" here was a lie the coach had no way to catch.
+    if (replanFrom >= TOTAL_SHIFTS) {
+      setToast({
+        id: Date.now(),
+        title: 'Last game is still open',
+        detail: 'Save it or start over first — nothing here can change it',
+      });
+      return;
+    }
+    buildLineup(replanFrom);
+  }, [buildLineup, replanFrom]);
 
   /** Apply an availability change, then re-plan the untouched shifts. */
   const applyAvailability = useCallback(
     (playerId, patch, fromShift = replanFrom) => {
       const next = roster.map((p) => (p.id === playerId ? { ...p, ...patch } : p));
       setRoster(next);
-      if (fromShift < TOTAL_SHIFTS) buildLineup(fromShift, next, { reshuffle: false });
+      if (fromShift < TOTAL_SHIFTS) return buildLineup(fromShift, next, { reshuffle: false });
+      return { editsReplaced: false };
     },
     [roster, replanFrom, setRoster, buildLineup]
   );
@@ -303,15 +357,19 @@ export default function App() {
         });
         return;
       }
-      applyAvailability(
+      const { editsReplaced } = applyAvailability(
         playerId,
         { isPresent: true, arriveShift: arriveFrom, departShift: null },
         arriveFrom
       );
+      // This replaces the rebuild's own toast, so it has to carry its warning
+      // too — otherwise the one path most likely to wipe hand edits says nothing.
       setToast({
         id: Date.now(),
         title: `${name} joins from shift ${arriveFrom + 1}`,
-        detail: `Shift ${arriveFrom} stays exactly as it is`,
+        detail: editsReplaced
+          ? `Hand edits from shift ${arriveFrom + 1} on were replaced`
+          : `Shift ${arriveFrom} stays exactly as it is`,
       });
     },
     [roster, applyAvailability, arriveFrom]
@@ -362,6 +420,7 @@ export default function App() {
       const nameOf = Object.fromEntries(roster.map((p) => [p.id, p.name]));
       const updated = applySwap(lineup, globalShift, positionId, playerId);
       setLineup(updated);
+      markEdited(globalShift);
 
       // Report the resulting shift counts, not just the names. A manual swap is
       // a local edit — the shifts still to come are deliberately left alone, so
@@ -377,7 +436,7 @@ export default function App() {
         detail: `Shift ${globalShift + 1} · now ${counts} shifts`,
       });
     },
-    [lineup, globalShift, roster, present, setLineup]
+    [lineup, globalShift, roster, present, setLineup, markEdited]
   );
 
   /**
@@ -428,6 +487,7 @@ export default function App() {
         return;
       }
       setLineup(res.lineup);
+      markEdited(from.shift, to.shift);
       const a = nameOf[lineup[from.shift][from.posId]];
       const b = nameOf[lineup[to.shift][to.posId]];
       const sameShift = from.shift === to.shift;
@@ -439,13 +499,15 @@ export default function App() {
           : `Shift ${from.shift + 1} ⇄ shift ${to.shift + 1}`,
       });
     },
-    [lineup, roster, setLineup]
+    [lineup, roster, setLineup, markEdited]
   );
 
   const handleLineupChange = useCallback(
-    (shiftIndex, positionId, playerId) =>
-      setLineup((prev) => applySwap(prev, shiftIndex, positionId, playerId)),
-    [setLineup]
+    (shiftIndex, positionId, playerId) => {
+      setLineup((prev) => applySwap(prev, shiftIndex, positionId, playerId));
+      markEdited(shiftIndex);
+    },
+    [setLineup, markEdited]
   );
 
   /**
@@ -502,7 +564,11 @@ export default function App() {
 
   const handleUndoShiftChange = useCallback(() => {
     if (!undoPoint) return;
-    setClock(undoPoint.clock);
+    // Put the SHIFT back and nothing else. Restoring the whole snapshot also
+    // restored whether the clock was running: pause for an injury after a
+    // mis-tapped sub, hit undo, and the clock restarted with the stoppage
+    // counted — or, the other way round, froze while play carried on.
+    setClock((c) => ({ ...c, shiftInHalf: undoPoint.clock.shiftInHalf }));
     setUndoPoint(null);
   }, [undoPoint, setClock]);
 
@@ -586,6 +652,28 @@ export default function App() {
     setGames([]);
   }, [setGames]);
 
+  /**
+   * "Nobody present plays nothing", checked against the lineup as it stands
+   * NOW. The generator's own check only runs when it builds, so a hand edit
+   * that took away a late arrival's only shift left them on zero with no
+   * banner at all. The build-time version of this warning is swapped for the
+   * live one so the two can never disagree.
+   */
+  const shownWarnings = useMemo(() => {
+    const kept = warnings.filter((w) => !w.includes('marked present but'));
+    if (!lineupReady) return kept;
+    const stats = computeGameStats(lineup, present);
+    const none = present.filter((p) => !stats[p.id]?.total).map((p) => p.name);
+    if (!none.length) return kept;
+    const one = none.length === 1;
+    return [
+      `${none.join(', ')} ${one ? 'is' : 'are'} marked present but ${one ? 'has' : 'have'} ` +
+        `no shifts. Put them in on the Matrix, check arrive/leave times on the ` +
+        `Live tab, or mark them out on Setup.`,
+      ...kept,
+    ];
+  }, [warnings, lineupReady, lineup, present]);
+
   // Sub-due flag drives the badge on the Live tab from anywhere in the app.
   const subDue = clock.status === 'live' && elapsed >= shiftDueAt(clock.shiftInHalf);
 
@@ -624,7 +712,14 @@ export default function App() {
             settings={settings}
             setSettings={setSettings}
             onGenerate={handleGenerate}
-            warnings={warnings}
+            warnings={shownWarnings}
+            leftoverGame={leftoverGame}
+            gameUnderWay={!gameNotStarted}
+            replanFrom={replanFrom}
+            lastBuiltAt={lineupMeta?.builtAt ?? null}
+            canSaveLeftover={clock.status === 'final'}
+            onSaveLeftover={handleFinishGame}
+            onStartOver={handleResetGame}
             lineupReady={lineupReady}
             onGoLive={() => setTab('live')}
             seasonGkShifts={seasonGkShifts}
@@ -652,7 +747,7 @@ export default function App() {
               onRegenerate={handleGenerate}
               onOpenMatrix={() => setTab('matrix')}
               onOpenRosterChange={() => setRosterSheetOpen(true)}
-              warnings={warnings}
+              warnings={shownWarnings}
               wakeLock={wakeLock}
               canUndoShiftChange={!!undoPoint}
               onUndoShiftChange={handleUndoShiftChange}
