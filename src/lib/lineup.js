@@ -759,7 +759,17 @@ export function generateLineup(players, opts = {}) {
         // back on instead of letting them breathe. Squared gives the rhythm a
         // coach expects: keep 0:00-15:00, sit 15:00-22:30, play 22:30-30:00.
         const floor = floorFor(p.id);
-        if (floor > 0 && s0.fieldShifts < floor) {
+        // ...unless the one field shift still owed is already secured. A
+        // player who was on last shift and sits this one is guaranteed the
+        // next by the no-double-sit rule below, so pushing them on now only
+        // bunches their outfield time together. It gave a full-half keeper
+        // sit-play-play-sit in every 15-player game, where sit-play-sit-play
+        // is the rhythm kids actually want; the floor is met either way.
+        const secured =
+          floor - s0.fieldShifts === 1 &&
+          s0.benchStreak === 0 &&
+          fieldChancesFrom(p.id, s + 1) >= 1;
+        if (floor > 0 && s0.fieldShifts < floor && !secured) {
           const rate = (floor - s0.fieldShifts) / Math.max(1, fieldChancesFrom(p.id, s));
           score += W.KEEPER_FLOOR * rate * rate;
         }

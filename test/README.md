@@ -19,6 +19,7 @@ node variety.mjs      # per-player position spread, one readable game
 node zeroshift.mjs    # nobody present finishes a game with no shifts
 node matrixdrag.mjs   # fuzzed matrix drags, invariants after every swap
 node arrivals.mjs     # a late arrival never disturbs the shift on the pitch
+node keeperrhythm.mjs # full-half keeper alternates in the other half
 ```
 
 Run the lot after any change to `src/lib/lineup.js` or `src/lib/constants.js`.

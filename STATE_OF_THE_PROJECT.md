@@ -643,6 +643,14 @@ Each of these was shipped, then caught. They are the regression surface.
     their one shift left them on zero with no banner. `App.jsx` now derives it
     from the lineup as it stands on every change and replaces the build-time
     copy, so the two can never disagree.
+19. **A full-half keeper bunched his field time into the middle of the other
+    half.** With 15 present, the keeper went sit-play-play-sit in 400 of 400
+    games (reported from a real lineup: Daniel in goal all first half, then
+    S6+S7). The keeper field-time floor pulled him on at S7 while he still
+    owed one shift, though the no-double-sit rule already guaranteed him S8
+    if he rested. The floor now stands down when its last owed shift is
+    secured that way: 400/400 sit-play-sit-play, floors still met in every
+    game. `test/keeperrhythm.mjs` guards it.
 
 ---
 
